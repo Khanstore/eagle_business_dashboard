@@ -1,0 +1,11 @@
+<odoo>
+    <record id="advanced_dashboard_action" model="ir.actions.client">
+        <field name="name">Business Dashboard</field>
+        <field name="tag">advanced_dashboard_tag</field>
+    </record>
+
+    <menuitem id="advanced_dashboard_menu"
+              name="Business Dashboard"
+              action="advanced_dashboard_action"
+              sequence="1"/>
+</odoo>

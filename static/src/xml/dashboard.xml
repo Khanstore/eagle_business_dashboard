@@ -1,0 +1,149 @@
+<templates xml:space="preserve">
+<t t-name="advanced_business_dashboard.dashboard">
+<div class="container" style="max-height: 90vh; overflow-y: auto;">
+<h2>Dashboard</h2>
+    <div class="row mb-3">
+
+    <div class="col-3">
+        <label>From Date</label>
+        <input type="date" class="form-control"
+               t-model="state.from_date"/>
+    </div>
+
+        <div class="col-3">
+        <label>To Date</label>
+            <input type="date" class="form-control"
+                   t-model="state.to_date"/>
+    </div>
+
+        <div class="col-2 d-flex align-items-end">
+        <button class="btn btn-primary"
+                t-on-click="applyFilter">
+            Apply
+        </button>
+    </div>
+
+</div>
+    <div class="row">
+<div class="col-6">
+<h3>Orders</h3>
+    <table class="table table-bordered">
+<tr>
+    <th>Order</th>
+    <th>Partner</th>
+    <th>Status</th>
+    <th>Amount</th></tr>
+        <t t-foreach="state.orders" t-as="o" t-key="o.name">
+<tr>
+<td>
+    <a href="#"
+       t-on-click.prevent="() => this.openOrder(o.id)">
+        <t t-esc="o.name"/>
+    </a>
+</td>
+    <td><t t-esc="o.partner"/></td>
+    <td><t t-esc="o.status"/></td>
+    <td><t t-esc="o.amount"/></td>
+</tr>
+</t>
+</table>
+</div>
+
+        <div class="col-6">
+<h3>Purchase</h3>
+            <table class="table table-bordered">
+<tr><th>Order</th>
+    <th>Partner</th>
+    <th>Status</th>
+    <th>Amount</th></tr>
+                <t t-foreach="state.purchases" t-as="p" t-key="p.name">
+<tr>
+<td>
+    <a href="#"
+       t-on-click.prevent="() => this.openPurchase(p.id)">
+        <t t-esc="p.name"/>
+    </a>
+</td>
+    <td><t t-esc="p.partner"/></td>
+    <td><t t-esc="p.status"/></td>
+    <td><t t-esc="p.amount"/></td>
+</tr>
+</t>
+</table>
+</div>
+</div>
+    <div class="row">
+<div class="col-6">
+<h3>Quotations</h3>
+    <table class="table table-bordered">
+<tr>
+    <th>Quotation</th>
+    <th>Partner</th>
+    <th>Status</th>
+    <th>Amount</th></tr>
+        <t t-foreach="state.quotations" t-as="q" t-key="q.name">
+<tr>
+<td>
+    <a href="#"
+       t-on-click.prevent="() => this.openOrder(q.id)">
+        <t t-esc="q.name"/>
+    </a>
+</td>
+    <td><t t-esc="q.partner"/></td>
+    <td><t t-esc="q.status"/></td>
+    <td><t t-esc="q.amount"/></td>
+</tr>
+</t>
+</table>
+</div>
+
+        <div class="col-6">
+<h3>RFQ</h3>
+            <table class="table table-bordered">
+<tr><th>Order</th>
+    <th>Partner</th>
+    <th>Status</th>
+    <th>Amount</th></tr>
+                <t t-foreach="state.rfq" t-as="p" t-key="p.name">
+<tr>
+<td>
+    <a href="#"
+       t-on-click.prevent="() => this.openPurchase(p.id)">
+        <t t-esc="p.name"/>
+    </a>
+</td>
+    <td><t t-esc="p.partner"/></td>
+    <td><t t-esc="p.status"/></td>
+    <td><t t-esc="p.amount"/></td>
+</tr>
+</t>
+</table>
+</div>
+</div>
+
+    <h3>Transactions</h3>
+    <table class="table table-bordered">
+<tr><th>Name</th>
+    <th>Partner</th>
+    <th>Ledger</th>
+    <th>Amount</th>
+    <th>Status</th></tr>
+        <t t-foreach="state.transactions" t-as="t" t-key="t.name">
+<tr>
+<td>
+    <a href="#"
+       t-on-click.prevent="() => this.openTransaction(t.id)">
+        <t t-esc="t.name"/>
+    </a>
+</td>
+    <td><t t-esc="t.partner"/></td>
+    <td><t t-esc="t.ledger"/></td>
+    <td><t t-esc="t.amount"/></td>
+    <td><t t-esc="t.state"/></td>
+</tr>
+</t>
+</table>
+
+</div>
+</t>
+</templates>
