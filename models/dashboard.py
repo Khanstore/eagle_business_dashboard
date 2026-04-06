@@ -78,7 +78,8 @@ class DashboardData(models.AbstractModel):
                 "name": t.name,
                 "partner": t.partner_id.name,
                 "ledger": t.journal_id.name,
-                "amount": t.amount,
+                "received": t.amount if t.payment_type=='inbound' else 0,
+                "paid": t.amount if t.payment_type=='outbound' else 0,
                 "state": t.state
             } for t in payments]
         }

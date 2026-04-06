@@ -126,7 +126,8 @@
 <tr><th>Name</th>
     <th>Partner</th>
     <th>Ledger</th>
-    <th>Amount</th>
+    <th>Received</th>
+    <th>Paid</th>
     <th>Status</th></tr>
         <t t-foreach="state.transactions" t-as="t" t-key="t.name">
 <tr>
@@ -138,7 +139,8 @@
 </td>
     <td><t t-esc="t.partner"/></td>
     <td><t t-esc="t.ledger"/></td>
-    <td><t t-esc="t.amount"/></td>
+    <td><t t-esc="t.received"/></td>
+    <td><t t-esc="t.paid"/></td>
     <td><t t-esc="t.state"/></td>
 </tr>
 </t>
