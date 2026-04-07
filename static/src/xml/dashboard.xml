@@ -2,28 +2,84 @@
 <t t-name="advanced_business_dashboard.dashboard">
 <div class="container" style="max-height: 90vh; overflow-y: auto;">
 <h2>Dashboard</h2>
-    <div class="row mb-3">
+    <!-- ── Filter Bar ── -->
+    <div class="card mb-3 p-3 bg-light">
 
-    <div class="col-3">
-        <label>From Date</label>
-        <input type="date" class="form-control"
-               t-model="state.from_date"/>
+        <!-- Row 1: Preset buttons -->
+        <div class="mb-2 d-flex flex-wrap gap-2">
+            <button t-on-click="() => this.applyPreset('today')"
+                    t-attf-class="btn btn-sm #{state.active_preset == 'today' ? 'btn-primary' : 'btn-outline-secondary'}">
+                Today
+            </button>
+            <button t-on-click="() => this.applyPreset('this_week')"
+                    t-attf-class="btn btn-sm #{state.active_preset == 'this_week' ? 'btn-primary' : 'btn-outline-secondary'}">
+                This Week
+            </button>
+            <button t-on-click="() => this.applyPreset('this_month')"
+                    t-attf-class="btn btn-sm #{state.active_preset == 'this_month' ? 'btn-primary' : 'btn-outline-secondary'}">
+                This Month
+            </button>
+            <button t-on-click="() => this.applyPreset('this_year')"
+                    t-attf-class="btn btn-sm #{state.active_preset == 'this_year' ? 'btn-primary' : 'btn-outline-secondary'}">
+                This Year
+            </button>
+            <button t-on-click="() => this.applyPreset('all')"
+                    t-attf-class="btn btn-sm #{state.active_preset == 'all' ? 'btn-primary' : 'btn-outline-secondary'}">
+                All Time
+            </button>
+        </div>
+
+        <!-- Row 2: Month picker | Year picker | Custom range | Partner -->
+        <div class="row g-2 align-items-end">
+
+            <div class="col-auto">
+                <label class="form-label mb-1 small text-muted">Month</label>
+                <select class="form-select form-select-sm" t-on-change="onMonthChange">
+                    <t t-foreach="monthOptions" t-as="mo" t-key="mo.value">
+                        <option t-att-value="mo.value"
+                                t-att-selected="state.selected_month == mo.value">
+                            <t t-esc="mo.label"/>
+                        </option>
+                    </t>
+                </select>
+            </div>
+
+            <div class="col-auto">
+                <label class="form-label mb-1 small text-muted">Year</label>
+                <select class="form-select form-select-sm" t-on-change="onYearChange">
+                    <t t-foreach="yearOptions" t-as="yr" t-key="yr">
+                        <option t-att-value="yr"
+                                t-att-selected="state.selected_year == yr.toString()">
+                            <t t-esc="yr"/>
+                        </option>
+                    </t>
+                </select>
+            </div>
+
+            <div class="col-auto">
+                <label class="form-label mb-1 small text-muted">From</label>
+                <input type="date" class="form-control form-control-sm"
+                       t-model="state.from_date"
+                       t-on-change="onDateChange"/>
+            </div>
+
+            <div class="col-auto">
+                <label class="form-label mb-1 small text-muted">To</label>
+                <input type="date" class="form-control form-control-sm"
+                       t-model="state.to_date"
+                       t-on-change="onDateChange"/>
+            </div>
+
+            <div class="col">
+                <label class="form-label mb-1 small text-muted">Partner</label>
+                <input type="text" class="form-control form-control-sm"
+                       placeholder="Search partner..."
+                       t-model="state.partner_filter"/>
+            </div>
+
+        </div>
     </div>
 
-        <div class="col-3">
-        <label>To Date</label>
-            <input type="date" class="form-control"
-                   t-model="state.to_date"/>
-    </div>
-
-        <div class="col-2 d-flex align-items-end">
-        <button class="btn btn-primary"
-                t-on-click="applyFilter">
-            Apply
-        </button>
-    </div>
-
-</div>
     <div class="row">
 <div class="col-6">
 <h3>Orders</h3>
@@ -33,7 +89,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-        <t t-foreach="state.orders" t-as="o" t-key="o.id">
+        <t t-foreach="filteredOrders" t-as="o" t-key="o.id">
 <tr>
 <td>
     <a href="#"
@@ -56,7 +112,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-                <t t-foreach="state.purchases" t-as="p" t-key="p.id">
+                <t t-foreach="filteredPurchases" t-as="p" t-key="p.id">
 <tr>
 <td>
     <a href="#"
@@ -81,7 +137,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-        <t t-foreach="state.quotations" t-as="q" t-key="q.id">
+        <t t-foreach="filteredQuotations" t-as="q" t-key="q.id">
 <tr>
 <td>
     <a href="#"
@@ -104,7 +160,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-                <t t-foreach="state.rfq" t-as="p" t-key="p.id">
+                <t t-foreach="filteredRfq" t-as="p" t-key="p.id">
 <tr>
 <td>
     <a href="#"
@@ -146,7 +202,7 @@
         </tr>
     </thead>
     <tbody>
-        <t t-foreach="state.transactions" t-as="t" t-key="t.id">
+        <t t-foreach="filteredTransactions" t-as="t" t-key="t.id">
             <tr>
                 <td>
                     <a href="#" t-on-click.prevent="() => this.openTransaction(t.id)">
