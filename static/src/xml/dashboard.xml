@@ -33,7 +33,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-        <t t-foreach="state.orders" t-as="o" t-key="o.name">
+        <t t-foreach="state.orders" t-as="o" t-key="o.id">
 <tr>
 <td>
     <a href="#"
@@ -56,7 +56,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-                <t t-foreach="state.purchases" t-as="p" t-key="p.name">
+                <t t-foreach="state.purchases" t-as="p" t-key="p.id">
 <tr>
 <td>
     <a href="#"
@@ -81,7 +81,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-        <t t-foreach="state.quotations" t-as="q" t-key="q.name">
+        <t t-foreach="state.quotations" t-as="q" t-key="q.id">
 <tr>
 <td>
     <a href="#"
@@ -104,7 +104,7 @@
     <th>Partner</th>
     <th>Status</th>
     <th>Amount</th></tr>
-                <t t-foreach="state.rfq" t-as="p" t-key="p.name">
+                <t t-foreach="state.rfq" t-as="p" t-key="p.id">
 <tr>
 <td>
     <a href="#"
@@ -122,30 +122,46 @@
 </div>
 
     <h3>Transactions</h3>
-    <table class="table table-bordered">
-<tr><th>Name</th>
-    <th>Partner</th>
-    <th>Ledger</th>
-    <th>Received</th>
-    <th>Paid</th>
-    <th>Status</th></tr>
-        <t t-foreach="state.transactions" t-as="t" t-key="t.name">
-<tr>
-<td>
-    <a href="#"
-       t-on-click.prevent="() => this.openTransaction(t.id)">
-        <t t-esc="t.name"/>
-    </a>
-</td>
-    <td><t t-esc="t.partner"/></td>
-    <td><t t-esc="t.ledger"/></td>
-    <td><t t-esc="t.received"/></td>
-    <td><t t-esc="t.paid"/></td>
-    <td><t t-esc="t.state"/></td>
-</tr>
-</t>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th t-on-click="() => this.sortTransactions('name')" style="cursor: pointer;">
+                Name <i t-attf-class="fa #{state.sortKey == 'name' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+            </th>
+            <th t-on-click="() => this.sortTransactions('partner')" style="cursor: pointer;">
+                Partner <i t-attf-class="fa #{state.sortKey == 'partner' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+            </th>
+            <th t-on-click="() => this.sortTransactions('ledger')" style="cursor: pointer;">
+                Ledger <i t-attf-class="fa #{state.sortKey == 'ledger' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+            </th>
+            <th t-on-click="() => this.sortTransactions('received')" style="cursor: pointer;">
+                Received <i t-attf-class="fa #{state.sortKey == 'received' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+            </th>
+            <th t-on-click="() => this.sortTransactions('paid')" style="cursor: pointer;">
+                Paid <i t-attf-class="fa #{state.sortKey == 'paid' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+            </th>
+            <th t-on-click="() => this.sortTransactions('state')" style="cursor: pointer;">
+                Status <i t-attf-class="fa #{state.sortKey == 'state' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+            </th>
+        </tr>
+    </thead>
+    <tbody>
+        <t t-foreach="state.transactions" t-as="t" t-key="t.id">
+            <tr>
+                <td>
+                    <a href="#" t-on-click.prevent="() => this.openTransaction(t.id)">
+                        <t t-esc="t.name"/>
+                    </a>
+                </td>
+                <td><t t-esc="t.partner"/></td>
+                <td><t t-esc="t.ledger"/></td>
+                <td><t t-esc="t.received"/></td>
+                <td><t t-esc="t.paid"/></td>
+                <td><t t-esc="t.state"/></td>
+            </tr>
+        </t>
+    </tbody>
 </table>
-
 </div>
 </t>
 </templates>
