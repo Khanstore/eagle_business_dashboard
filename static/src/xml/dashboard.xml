@@ -97,7 +97,10 @@
         <t t-esc="o.name"/>
     </a>
 </td>
-    <td><t t-esc="o.partner"/></td>
+    <td><a href="#"
+       t-on-click.prevent="() => this.openPartner(o.partner_id)">
+        <t t-esc="o.partner"/>
+    </a></td>
     <td><t t-esc="o.status"/></td>
     <td><t t-esc="o.amount"/></td>
 </tr>
@@ -120,7 +123,11 @@
         <t t-esc="p.name"/>
     </a>
 </td>
-    <td><t t-esc="p.partner"/></td>
+    <td><a href="#"
+       t-on-click.prevent="() => this.openPartner(p.partner_id)">
+        <t t-esc="p.partner"/>
+    </a>
+        <t t-esc="p.partner.name"/></td>
     <td><t t-esc="p.status"/></td>
     <td><t t-esc="p.amount"/></td>
 </tr>
@@ -145,7 +152,10 @@
         <t t-esc="q.name"/>
     </a>
 </td>
-    <td><t t-esc="q.partner"/></td>
+    <td><a href="#"
+       t-on-click.prevent="() => this.openPartner(q.partner_id)">
+        <t t-esc="q.partner"/>
+    </a></td>
     <td><t t-esc="q.status"/></td>
     <td><t t-esc="q.amount"/></td>
 </tr>
@@ -168,7 +178,10 @@
         <t t-esc="p.name"/>
     </a>
 </td>
-    <td><t t-esc="p.partner"/></td>
+    <td><a href="#"
+       t-on-click.prevent="() => this.openPartner(p.partner_id)">
+        <t t-esc="p.partner"/>
+    </a></td>
     <td><t t-esc="p.status"/></td>
     <td><t t-esc="p.amount"/></td>
 </tr>
@@ -202,6 +215,9 @@
         </tr>
     </thead>
     <tbody>
+        <t t-set="count" t-value="0"/>
+        <t t-set="received_total" t-value="0"/>
+        <t t-set="paid_total" t-value="0"/>
         <t t-foreach="filteredTransactions" t-as="t" t-key="t.id">
             <tr>
                 <td>
@@ -209,14 +225,21 @@
                         <t t-esc="t.name"/>
                     </a>
                 </td>
-                <td><t t-esc="t.partner"/></td>
+                <td><a href="#"
+                   t-on-click.prevent="() => this.openPartner(t.partner_id)">
+                    <t t-esc="t.partner"/>
+                </a></td>
                 <td><t t-esc="t.ledger"/></td>
                 <td><t t-esc="t.received"/></td>
                 <td><t t-esc="t.paid"/></td>
                 <td><t t-esc="t.state"/></td>
             </tr>
+            <t t-set="received_total" t-value="received_total+t.received"/>
+            <t t-set="paid_total" t-value="paid_total+t.paid"/>
+            <t t-set="count" t-value="count+1"/>
         </t>
     </tbody>
+    <tfoot><tr><td><t t-esc="count"/> Record </td><td></td><td></td><td><t t-esc="received_total"/> </td><td><t t-esc="paid_total"/></td></tr></tfoot>
 </table>
 </div>
 </t>

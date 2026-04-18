@@ -43,6 +43,7 @@ class DashboardData(models.AbstractModel):
                 "id": o.id,
                 "name": o.name,
                 "partner": o.partner_id.name or "Public User",
+                "partner_id": o.partner_id.id ,
                 "status": o.state,
                 "amount": o.amount_total
             } for o in orders],
@@ -50,12 +51,14 @@ class DashboardData(models.AbstractModel):
                 "id": p.id,
                 "name": p.name,
                 "partner": p.partner_id.name or "Supplier",
+                "partner_id": p.partner_id.id,
                 "status": p.state,
                 "amount": p.amount_total
             } for p in purchases],
             "rfq": [{
                 "id": r.id,
                 "name": r.name,
+                "partner_id": r.partner_id.id ,
                 "partner": r.partner_id.name or "Supplier",
                 "status": r.state,
                 "amount": r.amount_total
@@ -63,6 +66,7 @@ class DashboardData(models.AbstractModel):
             "transactions": [{
                 "id": t.id,
                 "name": t.name or "Draft Payment",
+                "partner_id": t.partner_id.id ,
                 "partner": t.partner_id.name or "No Partner",
                 "ledger": t.journal_id.name,
                 "received": t.amount if t.payment_type == 'inbound' else 0,
