@@ -1,0 +1,252 @@
+<templates xml:space="preserve">
+<t t-name="advanced_business_dashboard.finance_dashboard">
+<div class="container" style="max-height: 90vh; overflow-y: auto;">
+
+  <!-- ── Header ── -->
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="mb-0">Finance Dashboard</h2>
+    <button class="btn btn-sm btn-outline-dark" t-on-click="openPrintModal">
+      <i class="fa fa-print me-1"/> Print
+    </button>
+  </div>
+
+  <!-- ── Print Modal ── -->
+  <t t-if="state.showPrintModal">
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.4);">
+      <div class="modal-dialog modal-dialog-centered" style="max-width:380px;">
+        <div class="modal-content">
+          <div class="modal-header py-2">
+            <h5 class="modal-title">Print Options</h5>
+            <button type="button" class="btn-close" t-on-click="closePrintModal"/>
+          </div>
+          <div class="modal-body">
+            <p class="mb-3 text-muted small">Choose what to include in the printed PDF.</p>
+            <p class="small fw-semibold mb-2">What to include in the PDF:</p>
+
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="printInvoiceLines"
+                     t-att-checked="state.printInvoiceLines"
+                     t-on-change="(ev) => { this.state.printInvoiceLines = ev.target.checked; }"/>
+              <label class="form-check-label" for="printInvoiceLines">
+                Invoice lines (product, qty, price per invoice)
+              </label>
+            </div>
+
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="printVendorLines"
+                     t-att-checked="state.printVendorLines"
+                     t-on-change="(ev) => { this.state.printVendorLines = ev.target.checked; }"/>
+              <label class="form-check-label" for="printVendorLines">
+                Vendor Bill lines (product, qty, price per bill)
+              </label>
+            </div>
+
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="printDetails"
+                     t-att-checked="state.printDetails"
+                     t-on-change="(ev) => { this.state.printDetails = ev.target.checked; }"/>
+              <label class="form-check-label" for="printDetails">
+                Transaction detail rows
+              </label>
+            </div>
+          </div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-secondary btn-sm" t-on-click="closePrintModal">Cancel</button>
+            <button class="btn btn-dark btn-sm" t-on-click="doPrint">
+              <i class="fa fa-print me-1"/> Print PDF
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </t>
+
+  <!-- ── Filter Bar ── -->
+  <div class="card mb-3 p-3 bg-light">
+    <div class="mb-2 d-flex flex-wrap gap-2">
+      <button t-on-click="() => this.applyPreset('today')"
+              t-attf-class="btn btn-sm #{state.active_preset == 'today' ? 'btn-primary' : 'btn-outline-secondary'}">Today</button>
+      <button t-on-click="() => this.applyPreset('this_week')"
+              t-attf-class="btn btn-sm #{state.active_preset == 'this_week' ? 'btn-primary' : 'btn-outline-secondary'}">This Week</button>
+      <button t-on-click="() => this.applyPreset('this_month')"
+              t-attf-class="btn btn-sm #{state.active_preset == 'this_month' ? 'btn-primary' : 'btn-outline-secondary'}">This Month</button>
+      <button t-on-click="() => this.applyPreset('this_year')"
+              t-attf-class="btn btn-sm #{state.active_preset == 'this_year' ? 'btn-primary' : 'btn-outline-secondary'}">This Year</button>
+      <button t-on-click="() => this.applyPreset('all')"
+              t-attf-class="btn btn-sm #{state.active_preset == 'all' ? 'btn-primary' : 'btn-outline-secondary'}">All Time</button>
+    </div>
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-1 small text-muted">Month</label>
+        <select class="form-select form-select-sm" t-on-change="onMonthChange">
+          <t t-foreach="monthOptions" t-as="mo" t-key="mo.value">
+            <option t-att-value="mo.value" t-att-selected="state.selected_month == mo.value">
+              <t t-esc="mo.label"/>
+            </option>
+          </t>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-1 small text-muted">Year</label>
+        <select class="form-select form-select-sm" t-on-change="onYearChange">
+          <t t-foreach="yearOptions" t-as="yr" t-key="yr">
+            <option t-att-value="yr" t-att-selected="state.selected_year == yr.toString()">
+              <t t-esc="yr"/>
+            </option>
+          </t>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-1 small text-muted">From</label>
+        <input type="date" class="form-control form-control-sm"
+               t-model="state.from_date" t-on-change="onDateChange"/>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-1 small text-muted">To</label>
+        <input type="date" class="form-control form-control-sm"
+               t-model="state.to_date" t-on-change="onDateChange"/>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-1 small text-muted">Partner Name</label>
+        <input type="text" class="form-control form-control-sm"
+               placeholder="Search by name..." t-model="state.partner_filter"/>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-1 small text-muted">Partner ID</label>
+        <div class="input-group input-group-sm">
+          <select class="form-select form-select-sm" style="min-width:160px;"
+                  t-on-change="(ev) => { this.state.partner_id_filter = ev.target.value; }">
+            <option value="">— All Partners —</option>
+            <t t-foreach="state.partnerOptions" t-as="p" t-key="p.id">
+              <option t-att-value="p.id"
+                      t-att-selected="state.partner_id_filter === p.id">
+                <t t-esc="p.name"/> (#<t t-esc="p.id"/>)
+              </option>
+            </t>
+          </select>
+          <t t-if="state.partner_id_filter">
+            <button class="btn btn-outline-secondary btn-sm"
+                    t-on-click="() => { this.state.partner_id_filter = ''; }"
+                    title="Clear partner filter">&#x2715;</button>
+          </t>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Invoices ── -->
+  <h3>Invoices</h3>
+  <table class="table table-bordered table-sm">
+    <thead class="table-light">
+      <tr>
+        <th>Invoice</th><th>Partner</th><th>Date</th>
+        <th>Due Date</th><th>Amount</th><th>Outstanding</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <t t-foreach="filteredInvoices" t-as="inv" t-key="inv.id">
+        <tr>
+          <td><a href="#" t-on-click.prevent="() => this.openInvoice(inv.id)"><t t-esc="inv.name"/></a></td>
+          <td><a href="#" t-on-click.prevent="() => this.openPartner(inv.partner_id)"><t t-esc="inv.partner"/></a></td>
+          <td><t t-esc="inv.date"/></td>
+          <td><t t-esc="inv.due_date"/></td>
+          <td><t t-esc="inv.amount"/></td>
+          <td><t t-esc="inv.residual"/></td>
+          <td><t t-esc="inv.state"/></td>
+        </tr>
+      </t>
+    </tbody>
+    <tfoot>
+      <tr class="fw-bold">
+        <td colspan="4">Total (<t t-esc="filteredInvoices.length"/> records)</td>
+        <td><t t-esc="invoiceTotalAmount"/></td>
+        <td><t t-esc="invoiceTotalResidual"/></td>
+        <td/>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- ── Vendor Bills ── -->
+  <h3>Vendor Bills</h3>
+  <table class="table table-bordered table-sm">
+    <thead class="table-light">
+      <tr>
+        <th>Bill</th><th>Partner</th><th>Date</th>
+        <th>Due Date</th><th>Amount</th><th>Outstanding</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <t t-foreach="filteredVendorBills" t-as="vb" t-key="vb.id">
+        <tr>
+          <td><a href="#" t-on-click.prevent="() => this.openInvoice(vb.id)"><t t-esc="vb.name"/></a></td>
+          <td><a href="#" t-on-click.prevent="() => this.openPartner(vb.partner_id)"><t t-esc="vb.partner"/></a></td>
+          <td><t t-esc="vb.date"/></td>
+          <td><t t-esc="vb.due_date"/></td>
+          <td><t t-esc="vb.amount"/></td>
+          <td><t t-esc="vb.residual"/></td>
+          <td><t t-esc="vb.state"/></td>
+        </tr>
+      </t>
+    </tbody>
+    <tfoot>
+      <tr class="fw-bold">
+        <td colspan="4">Total (<t t-esc="filteredVendorBills.length"/> records)</td>
+        <td><t t-esc="vendorTotalAmount"/></td>
+        <td><t t-esc="vendorTotalResidual"/></td>
+        <td/>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- ── Transactions ── -->
+  <h3>Transactions</h3>
+  <table class="table table-bordered table-sm">
+    <thead class="table-light">
+      <tr>
+        <th t-on-click="() => this.sortTransactions('name')" style="cursor:pointer;">
+          Reference <i t-attf-class="fa #{state.sortKey=='name' ? (state.sortOrder=='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+        </th>
+        <th t-on-click="() => this.sortTransactions('partner')" style="cursor:pointer;">
+          Partner <i t-attf-class="fa #{state.sortKey=='partner' ? (state.sortOrder=='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+        </th>
+        <th>Date</th>
+        <th>Journal</th>
+        <th>Type</th>
+        <th t-on-click="() => this.sortTransactions('received')" style="cursor:pointer;">
+          Received <i t-attf-class="fa #{state.sortKey=='received' ? (state.sortOrder=='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+        </th>
+        <th t-on-click="() => this.sortTransactions('paid')" style="cursor:pointer;">
+          Paid <i t-attf-class="fa #{state.sortKey=='paid' ? (state.sortOrder=='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+        </th>
+        <th t-on-click="() => this.sortTransactions('state')" style="cursor:pointer;">
+          Status <i t-attf-class="fa #{state.sortKey=='state' ? (state.sortOrder=='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <t t-foreach="filteredTransactions" t-as="tx" t-key="tx.id">
+        <tr>
+          <td><a href="#" t-on-click.prevent="() => this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td>
+          <td><a href="#" t-on-click.prevent="() => this.openPartner(tx.partner_id)"><t t-esc="tx.partner"/></a></td>
+          <td><t t-esc="tx.date"/></td>
+          <td><t t-esc="tx.journal"/></td>
+          <td><t t-esc="tx.type"/></td>
+          <td><t t-esc="tx.received"/></td>
+          <td><t t-esc="tx.paid"/></td>
+          <td><t t-esc="tx.state"/></td>
+        </tr>
+      </t>
+    </tbody>
+    <tfoot>
+      <tr class="fw-bold">
+        <td colspan="5">Total (<t t-esc="filteredTransactions.length"/> records)</td>
+        <td><t t-esc="txTotalReceived"/></td>
+        <td><t t-esc="txTotalPaid"/></td>
+        <td/>
+      </tr>
+    </tfoot>
+  </table>
+
+</div>
+</t>
+</templates>

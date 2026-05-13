@@ -4,8 +4,20 @@
         <field name="tag">advanced_dashboard_tag</field>
     </record>
 
+    <record id="finance_dashboard_action" model="ir.actions.client">
+        <field name="name">Finance Dashboard</field>
+        <field name="tag">finance_dashboard_tag</field>
+    </record>
+
     <menuitem id="advanced_dashboard_menu"
               name="Business Dashboard"
+              web_icon="eagle_business_dashboard,static/description/icon.png"
               action="advanced_dashboard_action"
               sequence="1"/>
+
+    <menuitem id="finance_dashboard_menu"
+              parent="advanced_dashboard_menu"
+              name="Finance Dashboard"
+              action="finance_dashboard_action"
+              sequence="2"/>
 </odoo>

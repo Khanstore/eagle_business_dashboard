@@ -167,6 +167,85 @@ class Dashboard extends Component {
         });
     }
 
+    // ── Print ─────────────────────────────────────────────────
+    printDashboard() {
+        // Find the dashboard container node
+        const container = this.__owl__.bdom && this.__owl__.bdom.el
+            ? this.__owl__.bdom.el
+            : document.querySelector('.o_action_manager .container');
+
+        if (!container) {
+            console.error('Dashboard: could not find container to print.');
+            return;
+        }
+
+        // Clone the content so we can strip non-print elements
+        const clone = container.cloneNode(true);
+        clone.querySelectorAll('.d-print-none, button, input, select').forEach(el => el.remove());
+
+        // Copy Bootstrap and FontAwesome stylesheets from the host page
+        const styleLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+            .map(l => `<link rel="stylesheet" href="${l.href}">`)
+            .join('\n');
+
+        const printWin = window.open('', '_blank', 'width=1200,height=800');
+        printWin.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Business Dashboard</title>
+  ${styleLinks}
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: sans-serif;
+      font-size: 12px;
+    }
+    .container {
+      max-height: none !important;
+      overflow: visible !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      padding: 0 !important;
+    }
+    /* Make the two-column rows use full width with equal halves */
+    .row { display: flex; flex-wrap: nowrap; gap: 12px; margin-bottom: 8px; }
+    .col-6 { flex: 1 1 0; min-width: 0; overflow: hidden; }
+    /* Compact tables */
+    table { width: 100%; font-size: 11px; border-collapse: collapse; table-layout: fixed; }
+    th, td { padding: 3px 5px; border: 1px solid #ccc; word-break: break-word; overflow: hidden; }
+    h2 { font-size: 16px; margin: 0 0 8px; }
+    h3 { font-size: 13px; margin: 0 0 4px; }
+    a { color: inherit !important; text-decoration: none !important; }
+    tr { page-break-inside: avoid; }
+    /* Scale entire body to fit A4/letter width */
+    @media print {
+      @page { margin: 10mm; size: A4 landscape; }
+      body { font-size: 10px; padding: 0; }
+      table { font-size: 9px; }
+      th, td { padding: 2px 4px; }
+    }
+  </style>
+</head>
+<body>${clone.outerHTML}</body>
+</html>`);
+        printWin.document.close();
+
+        printWin.onload = () => {
+            printWin.focus();
+            printWin.print();
+            printWin.close();
+        };
+
+        // Fallback
+        setTimeout(() => {
+            try { printWin.focus(); printWin.print(); printWin.close(); }
+            catch(e) { /* already closed */ }
+        }, 1800);
+    }
+
     // ── Navigation ────────────────────────────────────────────
     openOrder(id) {
         this.action.doAction({ type: "ir.actions.act_window", res_model: "sale.order", res_id: id, views: [[false, "form"]], target: "new" });

@@ -1,7 +1,12 @@
 <templates xml:space="preserve">
 <t t-name="advanced_business_dashboard.dashboard">
 <div class="container" style="max-height: 90vh; overflow-y: auto;">
-<h2>Dashboard</h2>
+<div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="mb-0">Dashboard</h2>
+    <button class="btn btn-sm btn-outline-dark d-print-none" t-on-click="printDashboard">
+        <i class="fa fa-print me-1"/> Print
+    </button>
+</div>
     <!-- ── Filter Bar ── -->
     <div class="card mb-3 p-3 bg-light">
 
