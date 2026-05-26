@@ -211,7 +211,7 @@
         </th>
         <th>Date</th>
         <th>Journal</th>
-        <th>Type</th>
+<!--        <th>Type</th>-->
         <th t-on-click="() => this.sortTransactions('received')" style="cursor:pointer;">
           Received <i t-attf-class="fa #{state.sortKey=='received' ? (state.sortOrder=='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
         </th>
@@ -230,7 +230,7 @@
           <td><a href="#" t-on-click.prevent="() => this.openPartner(tx.partner_id)"><t t-esc="tx.partner"/></a></td>
           <td><t t-esc="tx.date"/></td>
           <td><t t-esc="tx.journal"/></td>
-          <td><t t-esc="tx.type"/></td>
+<!--          <td><t t-esc="tx.type"/></td>-->
           <td><t t-esc="tx.received"/></td>
           <td><t t-esc="tx.paid"/></td>
           <td><t t-esc="tx.state"/></td>
@@ -239,7 +239,7 @@
     </tbody>
     <tfoot>
       <tr class="fw-bold">
-        <td colspan="5">Total (<t t-esc="filteredTransactions.length"/> records)</td>
+        <td colspan="4">Total (<t t-esc="filteredTransactions.length"/> records)</td>
         <td><t t-esc="txTotalReceived"/></td>
         <td><t t-esc="txTotalPaid"/></td>
         <td/>

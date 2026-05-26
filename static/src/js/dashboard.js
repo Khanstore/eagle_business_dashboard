@@ -33,10 +33,10 @@ class Dashboard extends Component {
             purchases: [],
             rfq: [],
             transactions: [],
-            from_date: this._fmt(new Date(now.getFullYear(), now.getMonth(), 1)),
+            from_date: this._fmt(now),
             to_date: this._fmt(now),
             partner_filter: '',
-            active_preset: 'this_month',
+            active_preset: 'today',
             selected_month: this.monthOptions[0].value,
             selected_year: String(now.getFullYear()),
             sortKey: '',
@@ -50,7 +50,10 @@ class Dashboard extends Component {
 
     // ── Helpers ──────────────────────────────────────────────
     _fmt(date) {
-        return date.toISOString().split('T')[0];
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
     }
 
     _setDates(from, to, preset = 'custom') {

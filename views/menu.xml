@@ -20,4 +20,9 @@
               name="Finance Dashboard"
               action="finance_dashboard_action"
               sequence="2"/>
+    <menuitem id="Business_dashboard_menu"
+              parent="advanced_dashboard_menu"
+              name="Business Dashboard"
+              action="advanced_dashboard_action"
+              sequence="2"/>
 </odoo>
