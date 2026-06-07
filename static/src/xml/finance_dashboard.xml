@@ -42,11 +42,11 @@
             </div>
 
             <div class="form-check form-switch mb-2">
-              <input class="form-check-input" type="checkbox" id="printDetails"
-                     t-att-checked="state.printDetails"
-                     t-on-change="(ev) => { this.state.printDetails = ev.target.checked; }"/>
-              <label class="form-check-label" for="printDetails">
-                Transaction detail rows
+              <input class="form-check-input" type="checkbox" id="printJournalBalance"
+                     t-att-checked="state.printJournalBalance"
+                     t-on-change="(ev) => { this.state.printJournalBalance = ev.target.checked; }"/>
+              <label class="form-check-label" for="printJournalBalance">
+                Journal Balance table
               </label>
             </div>
           </div>
@@ -134,6 +134,61 @@
     </div>
   </div>
 
+  <!-- ── Journal Balance ── -->
+  <h3 class="mt-3">Journal Balance</h3>
+  <table class="table table-bordered table-sm table-hover">
+    <thead class="table-dark">
+      <tr>
+        <th>Journal Name</th>
+        <th class="text-end" title="Balance before the starting date">Opening</th>
+        <th class="text-end" title="Credits posted during the period (money in) — count shows number of credit lines">Deposit</th>
+        <th class="text-end" title="Debits posted during the period (money out) — count shows number of debit lines">Withdraw</th>
+        <th class="text-end" title="Opening + Deposit − Withdraw">Closing</th>
+      </tr>
+    </thead>
+    <tbody>
+      <t t-if="state.journal_balances.length === 0">
+        <tr>
+          <td colspan="5" class="text-center text-muted fst-italic py-3">
+            No bank / cash journals found.
+          </td>
+        </tr>
+      </t>
+      <t t-foreach="state.journal_balances" t-as="jb" t-key="jb.journal_name">
+        <tr>
+          <td class="fw-semibold"><t t-esc="jb.journal_name"/></td>
+          <td class="text-end font-monospace"><t t-esc="jb.opening.toFixed(2)"/></td>
+          <td class="text-end font-monospace text-success">
+            <t t-esc="jb.deposit.toFixed(2)"/>
+            <span class="text-muted ms-1 small">(<t t-esc="jb.deposit_count"/>)</span>
+          </td>
+          <td class="text-end font-monospace text-danger">
+            <t t-esc="jb.withdraw.toFixed(2)"/>
+            <span class="text-muted ms-1 small">(<t t-esc="jb.withdraw_count"/>)</span>
+          </td>
+          <td t-attf-class="text-end font-monospace fw-bold #{jb.closing >= 0 ? 'text-primary' : 'text-danger'}">
+            <t t-esc="jb.closing.toFixed(2)"/>
+          </td>
+        </tr>
+      </t>
+    </tbody>
+    <tfoot class="table-secondary fw-bold">
+      <tr>
+        <td>Total (<t t-esc="state.journal_balances.length"/> journals)</td>
+        <td class="text-end font-monospace"><t t-esc="jbTotalOpening"/></td>
+        <td class="text-end font-monospace text-success">
+          <t t-esc="jbTotalDeposit"/>
+          <span class="text-muted ms-1 small fw-normal">(<t t-esc="jbTotalDepositCount"/>)</span>
+        </td>
+        <td class="text-end font-monospace text-danger">
+          <t t-esc="jbTotalWithdraw"/>
+          <span class="text-muted ms-1 small fw-normal">(<t t-esc="jbTotalWithdrawCount"/>)</span>
+        </td>
+        <td class="text-end font-monospace text-primary"><t t-esc="jbTotalClosing"/></td>
+      </tr>
+    </tfoot>
+  </table>
+
   <!-- ── Invoices ── -->
   <h3>Invoices</h3>
   <table class="table table-bordered table-sm">
@@ -211,7 +266,6 @@
         </th>
         <th>Date</th>
         <th>Journal</th>
-<!--        <th>Type</th>-->
         <th t-on-click="() => this.sortTransactions('received')" style="cursor:pointer;">
           Received <i t-attf-class="fa #{state.sortKey=='received' ? (state.sortOrder=='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
         </th>
@@ -230,7 +284,6 @@
           <td><a href="#" t-on-click.prevent="() => this.openPartner(tx.partner_id)"><t t-esc="tx.partner"/></a></td>
           <td><t t-esc="tx.date"/></td>
           <td><t t-esc="tx.journal"/></td>
-<!--          <td><t t-esc="tx.type"/></td>-->
           <td><t t-esc="tx.received"/></td>
           <td><t t-esc="tx.paid"/></td>
           <td><t t-esc="tx.state"/></td>
