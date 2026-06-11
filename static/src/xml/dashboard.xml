@@ -87,57 +87,89 @@
 
     <div class="row">
 <div class="col-6">
-<h3>Orders</h3>
-    <table class="table table-bordered">
-<tr>
-    <th>Order</th>
-    <th>Partner</th>
-    <th>Status</th>
-    <th>Amount</th></tr>
-        <t t-foreach="filteredOrders" t-as="o" t-key="o.id">
-<tr>
-<td>
-    <a href="#"
-       t-on-click.prevent="() => this.openOrder(o.id)">
-        <t t-esc="o.name"/>
-    </a>
-</td>
-    <td><a href="#"
-       t-on-click.prevent="() => this.openPartner(o.partner_id)">
-        <t t-esc="o.partner"/>
-    </a></td>
-    <td><t t-esc="o.status"/></td>
-    <td><t t-esc="o.amount"/></td>
-</tr>
-</t>
-</table>
+  <div class="d-flex align-items-center justify-content-between mb-1">
+    <h3 class="mb-0">Orders</h3>
+    <button class="btn btn-sm btn-primary" t-on-click="createOrder">
+      <i class="fa fa-plus me-1"/> New Order
+    </button>
+  </div>
+  <table class="table table-bordered table-sm">
+    <thead class="table-light">
+      <tr>
+        <th>Order</th>
+        <th>Partner</th>
+        <th>Status</th>
+        <th>Invoice Status</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <t t-foreach="filteredOrders" t-as="o" t-key="o.id">
+        <tr>
+          <td>
+            <a href="#" t-on-click.prevent="() => this.openOrder(o.id)">
+              <t t-esc="o.name"/>
+            </a>
+          </td>
+          <td>
+            <a href="#" t-on-click.prevent="() => this.openPartner(o.partner_id)">
+              <t t-esc="o.partner"/>
+            </a>
+          </td>
+          <td><t t-esc="o.status"/></td>
+          <td>
+            <span t-attf-class="badge #{o.invoice_status == 'invoiced' ? 'bg-success' : o.invoice_status == 'to invoice' ? 'bg-warning text-dark' : o.invoice_status == 'upselling' ? 'bg-info' : 'bg-secondary'}">
+              <t t-esc="o.invoice_status"/>
+            </span>
+          </td>
+          <td><t t-esc="o.amount"/></td>
+        </tr>
+      </t>
+    </tbody>
+  </table>
 </div>
 
         <div class="col-6">
-<h3>Purchase</h3>
-            <table class="table table-bordered">
-<tr><th>Order</th>
-    <th>Partner</th>
-    <th>Status</th>
-    <th>Amount</th></tr>
-                <t t-foreach="filteredPurchases" t-as="p" t-key="p.id">
-<tr>
-<td>
-    <a href="#"
-       t-on-click.prevent="() => this.openPurchase(p.id)">
-        <t t-esc="p.name"/>
-    </a>
-</td>
-    <td><a href="#"
-       t-on-click.prevent="() => this.openPartner(p.partner_id)">
-        <t t-esc="p.partner"/>
-    </a>
-        <t t-esc="p.partner.name"/></td>
-    <td><t t-esc="p.status"/></td>
-    <td><t t-esc="p.amount"/></td>
-</tr>
-</t>
-</table>
+  <div class="d-flex align-items-center justify-content-between mb-1">
+    <h3 class="mb-0">Purchase</h3>
+    <button class="btn btn-sm btn-success" t-on-click="createPurchase">
+      <i class="fa fa-plus me-1"/> New Purchase
+    </button>
+  </div>
+  <table class="table table-bordered table-sm">
+    <thead class="table-light">
+      <tr>
+        <th>Order</th>
+        <th>Partner</th>
+        <th>Status</th>
+        <th>Billing Status</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <t t-foreach="filteredPurchases" t-as="p" t-key="p.id">
+        <tr>
+          <td>
+            <a href="#" t-on-click.prevent="() => this.openPurchase(p.id)">
+              <t t-esc="p.name"/>
+            </a>
+          </td>
+          <td>
+            <a href="#" t-on-click.prevent="() => this.openPartner(p.partner_id)">
+              <t t-esc="p.partner"/>
+            </a>
+          </td>
+          <td><t t-esc="p.status"/></td>
+          <td>
+            <span t-attf-class="badge #{p.billing_status == 'invoiced' ? 'bg-success' : p.billing_status == 'to invoice' ? 'bg-warning text-dark' : 'bg-secondary'}">
+              <t t-esc="p.billing_status"/>
+            </span>
+          </td>
+          <td><t t-esc="p.amount"/></td>
+        </tr>
+      </t>
+    </tbody>
+  </table>
 </div>
 </div>
     <div class="row">

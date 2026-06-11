@@ -251,10 +251,28 @@ class Dashboard extends Component {
 
     // ── Navigation ────────────────────────────────────────────
     openOrder(id) {
-        this.action.doAction({ type: "ir.actions.act_window", res_model: "sale.order", res_id: id, views: [[false, "form"]], target: "new" });
+        this.action.doAction(
+            { type: "ir.actions.act_window", res_model: "sale.order", res_id: id, views: [[false, "form"]], target: "new" },
+            { onClose: () => this.loadData() }
+        );
     }
     openPurchase(id) {
-        this.action.doAction({ type: "ir.actions.act_window", res_model: "purchase.order", res_id: id, views: [[false, "form"]], target: "new" });
+        this.action.doAction(
+            { type: "ir.actions.act_window", res_model: "purchase.order", res_id: id, views: [[false, "form"]], target: "new" },
+            { onClose: () => this.loadData() }
+        );
+    }
+    createOrder() {
+        this.action.doAction(
+            { type: "ir.actions.act_window", res_model: "sale.order", views: [[false, "form"]], target: "new" },
+            { onClose: () => this.loadData() }
+        );
+    }
+    createPurchase() {
+        this.action.doAction(
+            { type: "ir.actions.act_window", res_model: "purchase.order", views: [[false, "form"]], target: "new" },
+            { onClose: () => this.loadData() }
+        );
     }
     openTransaction(id) {
         this.action.doAction({ type: "ir.actions.act_window", res_model: "account.payment", res_id: id, views: [[false, "form"]], target: "new" });
