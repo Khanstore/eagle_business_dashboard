@@ -41,7 +41,16 @@ class Dashboard extends Component {
             selected_year: String(now.getFullYear()),
             sortKey: '',
             sortOrder: 'asc',
+            // Print modal
+            showPrintModal:    false,
+            printOrderLines:   false,
+            printPurchaseLines: false,
+            printTxDetails:    true,
         });
+
+        // Lines cached outside OWL state (reactive proxy strips nested arrays)
+        this._orderLines    = {};  // sale.order id -> [...lines]   (Orders + Quotations)
+        this._purchaseLines = {};  // purchase.order id -> [...lines] (Purchase + RFQ)
 
         onWillStart(async () => {
             await this.loadData();
@@ -126,10 +135,35 @@ class Dashboard extends Component {
                 "get_dashboard",
                 [this.state.from_date || false, this.state.to_date || false]
             );
-            this.state.quotations    = data.quotations    || [];
-            this.state.orders        = data.orders        || [];
-            this.state.purchases     = data.purchases     || [];
-            this.state.rfq           = data.rfq           || [];
+
+            this._orderLines    = {};
+            this._purchaseLines = {};
+
+            const quotations = (data.quotations || []).map(r => {
+                this._orderLines[r.id] = r.lines || [];
+                const { lines, ...rest } = r;
+                return rest;
+            });
+            const orders = (data.orders || []).map(r => {
+                this._orderLines[r.id] = r.lines || [];
+                const { lines, ...rest } = r;
+                return rest;
+            });
+            const purchases = (data.purchases || []).map(r => {
+                this._purchaseLines[r.id] = r.lines || [];
+                const { lines, ...rest } = r;
+                return rest;
+            });
+            const rfq = (data.rfq || []).map(r => {
+                this._purchaseLines[r.id] = r.lines || [];
+                const { lines, ...rest } = r;
+                return rest;
+            });
+
+            this.state.quotations    = quotations;
+            this.state.orders        = orders;
+            this.state.purchases     = purchases;
+            this.state.rfq           = rfq;
             this.state.transactions  = data.transactions  || [];
 
             if (this.state.sortKey) this._applySort();
@@ -170,26 +204,133 @@ class Dashboard extends Component {
         });
     }
 
-    // ── Print ─────────────────────────────────────────────────
-    printDashboard() {
-        // Find the dashboard container node
-        const container = this.__owl__.bdom && this.__owl__.bdom.el
-            ? this.__owl__.bdom.el
-            : document.querySelector('.o_action_manager .container');
+    // ── Totals ────────────────────────────────────────────────
+    get txTotalReceived() {
+        return this.filteredTransactions.reduce((s, r) => s + (parseFloat(r.received) || 0), 0).toFixed(2);
+    }
+    get txTotalPaid() {
+        return this.filteredTransactions.reduce((s, r) => s + (parseFloat(r.paid) || 0), 0).toFixed(2);
+    }
 
-        if (!container) {
-            console.error('Dashboard: could not find container to print.');
-            return;
-        }
+    // ── Print modal ───────────────────────────────────────────
+    openPrintModal()  { this.state.showPrintModal = true; }
+    closePrintModal() { this.state.showPrintModal = false; }
 
-        // Clone the content so we can strip non-print elements
-        const clone = container.cloneNode(true);
-        clone.querySelectorAll('.d-print-none, button, input, select').forEach(el => el.remove());
+    doPrint() {
+        // Snapshot toggles + data before closing the modal
+        const includeOrderLines    = this.state.printOrderLines;
+        const includePurchaseLines = this.state.printPurchaseLines;
+        const includeTxDetails     = this.state.printTxDetails;
 
-        // Copy Bootstrap and FontAwesome stylesheets from the host page
+        const quotations  = this.filteredQuotations.map(r => ({ ...r, lines: this._orderLines[r.id] || [] }));
+        const orders      = this.filteredOrders.map(r => ({ ...r, lines: this._orderLines[r.id] || [] }));
+        const purchases   = this.filteredPurchases.map(r => ({ ...r, lines: this._purchaseLines[r.id] || [] }));
+        const rfq         = this.filteredRfq.map(r => ({ ...r, lines: this._purchaseLines[r.id] || [] }));
+        const transactions = [...this.filteredTransactions];
+
+        this.state.showPrintModal = false;
+
+        const fromLabel = this.state.from_date || 'All';
+        const toLabel   = this.state.to_date   || 'All';
+
         const styleLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
-            .map(l => `<link rel="stylesheet" href="${l.href}">`)
-            .join('\n');
+            .map(l => `<link rel="stylesheet" href="${l.href}">`).join('\n');
+
+        const fmt = (v) => { const n = parseFloat(v); return isNaN(n) ? '0.00' : n.toFixed(2); };
+
+        const totalOrders    = orders.reduce((s, r)    => s + (parseFloat(r.amount) || 0), 0);
+        const totalPurchases = purchases.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+        const totalQuotes    = quotations.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+        const totalRfq       = rfq.reduce((s, r)       => s + (parseFloat(r.amount) || 0), 0);
+        const totalReceived  = transactions.reduce((s, r) => s + (parseFloat(r.received) || 0), 0);
+        const totalPaid      = transactions.reduce((s, r) => s + (parseFloat(r.paid) || 0), 0);
+
+        // ── Generic order/purchase table with optional product-lines sub-table ──
+        const buildOrderTable = (records, includeLines, extraCol) => {
+            if (!records || records.length === 0)
+                return '<p style="color:#888;font-size:11px;margin:4px 0 12px;">No records found.</p>';
+
+            const extraHeader = extraCol ? `<th>${extraCol.label}</th>` : '';
+            let html = `<table class="detail-table">
+                <thead><tr>
+                    <th>Reference</th><th>Partner</th><th>Status</th>${extraHeader}<th style="text-align:right">Amount</th>
+                </tr></thead>
+                <tbody>`;
+
+            for (const r of records) {
+                const extraCell = extraCol ? `<td>${r[extraCol.field] || ''}</td>` : '';
+                const colCount  = extraCol ? 5 : 4;
+                html += `<tr class="move-header">
+                    <td>${r.name || ''}</td>
+                    <td>${r.partner || ''}</td>
+                    <td>${r.status || ''}</td>
+                    ${extraCell}
+                    <td style="text-align:right">${fmt(r.amount)}</td>
+                </tr>`;
+
+                if (includeLines && r.lines && r.lines.length > 0) {
+                    const lineRows = r.lines.map(l => `<tr class="line-row">
+                        <td>${l.product || ''}</td>
+                        <td style="text-align:right">${fmt(l.qty)}</td>
+                        <td style="text-align:right">${fmt(l.price_unit)}</td>
+                        <td style="text-align:right">${fmt(l.discount)}</td>
+                        <td>${l.tax || ''}</td>
+                        <td style="text-align:right">${fmt(l.subtotal)}</td>
+                    </tr>`).join('');
+
+                    html += `<tr><td colspan="${colCount}" style="padding:0 0 8px 28px;border-bottom:none;">
+                        <table class="lines-table">
+                            <thead><tr>
+                                <th>Product Name</th><th style="text-align:right">Qty</th>
+                                <th style="text-align:right">Rate</th><th style="text-align:right">Discount</th>
+                                <th>Tax</th><th style="text-align:right">Total</th>
+                            </tr></thead>
+                            <tbody>${lineRows}</tbody>
+                        </table>
+                    </td></tr>`;
+                }
+            }
+            html += '</tbody></table>';
+            return html;
+        };
+
+        // ── Transactions table — Received in blue, Paid in red ──
+        const buildTxTable = (rows) => {
+            if (!rows || rows.length === 0)
+                return '<p style="color:#888;font-size:11px;margin:4px 0 12px;">No records found.</p>';
+            const trs = rows.map(r => `<tr>
+                <td>${r.name || ''}</td>
+                <td>${r.partner || ''}</td>
+                <td>${r.ledger || ''}</td>
+                <td style="text-align:right;color:#0d6efd">${fmt(r.received)}</td>
+                <td style="text-align:right;color:#dc3545">${fmt(r.paid)}</td>
+                <td>${r.state || ''}</td>
+            </tr>`).join('');
+            return `<table class="detail-table">
+                <thead><tr>
+                    <th>Name</th><th>Partner</th><th>Ledger</th>
+                    <th style="text-align:right">Received</th><th style="text-align:right">Paid</th><th>Status</th>
+                </tr></thead>
+                <tbody>${trs}</tbody>
+            </table>`;
+        };
+
+        const quotationsHtml = buildOrderTable(quotations, includeOrderLines);
+        const ordersHtml     = buildOrderTable(orders, includeOrderLines, { label: 'Invoice Status', field: 'invoice_status' });
+        const purchasesHtml  = buildOrderTable(purchases, includePurchaseLines, { label: 'Billing Status', field: 'billing_status' });
+        const rfqHtml        = buildOrderTable(rfq, includePurchaseLines);
+
+        const txSectionHtml = includeTxDetails
+            ? `<h2>Transactions (${transactions.length} records)</h2>
+               <table class="summary-table">
+                 <thead><tr><th>Section</th><th style="text-align:right">Total Received</th><th style="text-align:right">Total Paid</th></tr></thead>
+                 <tbody><tr><td>Transactions</td>
+                   <td style="text-align:right;color:#0d6efd">${fmt(totalReceived)}</td>
+                   <td style="text-align:right;color:#dc3545">${fmt(totalPaid)}</td>
+                 </tr></tbody>
+               </table>
+               ${buildTxTable(transactions)}`
+            : '';
 
         const printWin = window.open('', '_blank', 'width=1200,height=800');
         printWin.document.write(`<!DOCTYPE html>
@@ -200,53 +341,66 @@ class Dashboard extends Component {
   ${styleLinks}
   <style>
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 16px;
-      font-family: sans-serif;
-      font-size: 12px;
-    }
-    .container {
-      max-height: none !important;
-      overflow: visible !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      padding: 0 !important;
-    }
-    /* Make the two-column rows use full width with equal halves */
-    .row { display: flex; flex-wrap: nowrap; gap: 12px; margin-bottom: 8px; }
-    .col-6 { flex: 1 1 0; min-width: 0; overflow: hidden; }
-    /* Compact tables */
-    table { width: 100%; font-size: 11px; border-collapse: collapse; table-layout: fixed; }
-    th, td { padding: 3px 5px; border: 1px solid #ccc; word-break: break-word; overflow: hidden; }
-    h2 { font-size: 16px; margin: 0 0 8px; }
-    h3 { font-size: 13px; margin: 0 0 4px; }
-    a { color: inherit !important; text-decoration: none !important; }
+    body { margin: 0; padding: 16px; font-family: sans-serif; font-size: 12px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .period { font-size: 11px; color: #555; margin-bottom: 12px; }
+    h2 { font-size: 14px; margin: 16px 0 6px; border-bottom: 2px solid #333; padding-bottom: 2px; }
+    .summary-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    .summary-table th, .summary-table td { padding: 4px 8px; border: 1px solid #ccc; font-size: 12px; }
+    .summary-table th { background: #f0f0f0; }
+    .conclusion-table { border-collapse: collapse; margin: 10px 0 18px; min-width: 420px; }
+    .conclusion-table th, .conclusion-table td { padding: 5px 12px; border: 1px solid #999; font-size: 12px; }
+    .conclusion-table thead tr { background: #e8e8e8; font-weight: bold; }
+    .conclusion-table tbody tr:nth-child(odd) { background: #f9f9f9; }
+    .conclusion-table tbody td:first-child { font-weight: 600; }
+    .detail-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 10px; }
+    .detail-table th { background: #f0f0f0; padding: 3px 6px; border: 1px solid #ccc; text-align: left; }
+    .detail-table td { padding: 3px 6px; border: 1px solid #ddd; vertical-align: top; }
+    .move-header td { background: #fafafa; font-weight: 500; }
+    .lines-table { width: 100%; border-collapse: collapse; font-size: 9px; margin: 2px 0 4px; }
+    .lines-table th { background: #e8f0fe; padding: 2px 5px; border: 1px solid #c5d5f5; text-align: left; }
+    .lines-table td { padding: 2px 5px; border: 1px solid #dde5f8; }
+    .lines-table tbody tr:nth-child(even) td { background: #f5f8ff; }
     tr { page-break-inside: avoid; }
-    /* Scale entire body to fit A4/letter width */
+    a { color: inherit; text-decoration: none; }
     @media print {
       @page { margin: 10mm; size: A4 landscape; }
       body { font-size: 10px; padding: 0; }
-      table { font-size: 9px; }
-      th, td { padding: 2px 4px; }
     }
   </style>
 </head>
-<body>${clone.outerHTML}</body>
+<body>
+  <h1>Business Dashboard</h1>
+  <div class="period">Period: ${fromLabel} &mdash; ${toLabel}</div>
+
+  <table class="conclusion-table">
+    <thead><tr><th>Section</th><th style="text-align:right">Records</th><th style="text-align:right">Total Amount</th></tr></thead>
+    <tbody>
+      <tr><td>Quotations</td><td style="text-align:right">${quotations.length}</td><td style="text-align:right">${fmt(totalQuotes)}</td></tr>
+      <tr><td>Orders</td><td style="text-align:right">${orders.length}</td><td style="text-align:right">${fmt(totalOrders)}</td></tr>
+      <tr><td>Purchase</td><td style="text-align:right">${purchases.length}</td><td style="text-align:right">${fmt(totalPurchases)}</td></tr>
+      <tr><td>RFQ</td><td style="text-align:right">${rfq.length}</td><td style="text-align:right">${fmt(totalRfq)}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Orders (${orders.length} records)</h2>
+  ${ordersHtml}
+
+  <h2>Purchase (${purchases.length} records)</h2>
+  ${purchasesHtml}
+
+  <h2>Quotations (${quotations.length} records)</h2>
+  ${quotationsHtml}
+
+  <h2>RFQ (${rfq.length} records)</h2>
+  ${rfqHtml}
+
+  ${txSectionHtml}
+</body>
 </html>`);
         printWin.document.close();
-
-        printWin.onload = () => {
-            printWin.focus();
-            printWin.print();
-            printWin.close();
-        };
-
-        // Fallback
-        setTimeout(() => {
-            try { printWin.focus(); printWin.print(); printWin.close(); }
-            catch(e) { /* already closed */ }
-        }, 1800);
+        printWin.onload = () => { printWin.focus(); printWin.print(); printWin.close(); };
+        setTimeout(() => { try { printWin.focus(); printWin.print(); printWin.close(); } catch(e) {} }, 1800);
     }
 
     // ── Navigation ────────────────────────────────────────────
@@ -274,8 +428,27 @@ class Dashboard extends Component {
             { onClose: () => this.loadData() }
         );
     }
+    // payment_type: 'inbound' (Receive Money) | 'outbound' (Make Payment)
+    createPayment(paymentType) {
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "account.payment",
+                views: [[false, "form"]],
+                target: "new",
+                context: {
+                    default_payment_type: paymentType,
+                    default_partner_type: paymentType === 'inbound' ? 'customer' : 'supplier',
+                },
+            },
+            { onClose: () => this.loadData() }
+        );
+    }
     openTransaction(id) {
-        this.action.doAction({ type: "ir.actions.act_window", res_model: "account.payment", res_id: id, views: [[false, "form"]], target: "new" });
+        this.action.doAction(
+            { type: "ir.actions.act_window", res_model: "account.payment", res_id: id, views: [[false, "form"]], target: "new" },
+            { onClose: () => this.loadData() }
+        );
     }
     openPartner(id) {
         this.action.doAction({ type: "ir.actions.act_window", res_model: "res.partner", res_id: id, views: [[false, "form"]], target: "new" });

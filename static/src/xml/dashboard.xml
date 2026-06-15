@@ -1,12 +1,64 @@
 <templates xml:space="preserve">
 <t t-name="advanced_business_dashboard.dashboard">
-<div class="container" style="max-height: 90vh; overflow-y: auto;">
-<div class="d-flex align-items-center justify-content-between mb-2">
+<div class="container-fluid" style="max-height: 90vh; overflow-y: auto;">
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
     <h2 class="mb-0">Dashboard</h2>
-    <button class="btn btn-sm btn-outline-dark d-print-none" t-on-click="printDashboard">
+    <button class="btn btn-sm btn-outline-dark" t-on-click="openPrintModal">
         <i class="fa fa-print me-1"/> Print
     </button>
 </div>
+
+    <!-- ── Print Modal ── -->
+    <t t-if="state.showPrintModal">
+      <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.4);">
+        <div class="modal-dialog modal-dialog-centered" style="max-width:380px; width:90vw;">
+          <div class="modal-content">
+            <div class="modal-header py-2">
+              <h5 class="modal-title">Print Options</h5>
+              <button type="button" class="btn-close" t-on-click="closePrintModal"/>
+            </div>
+            <div class="modal-body">
+              <p class="mb-3 text-muted small">Choose what to include in the printed PDF.</p>
+              <p class="small fw-semibold mb-2">What to include in the PDF:</p>
+
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="printOrderLines"
+                       t-model="state.printOrderLines"/>
+                <label class="form-check-label" for="printOrderLines">
+                  <strong>Order lines</strong>
+                  <span class="d-block text-muted small">Show product, qty, rate under each order/quotation</span>
+                </label>
+              </div>
+
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="printPurchaseLines"
+                       t-model="state.printPurchaseLines"/>
+                <label class="form-check-label" for="printPurchaseLines">
+                  <strong>Purchase lines</strong>
+                  <span class="d-block text-muted small">Show product, qty, rate under each purchase/RFQ</span>
+                </label>
+              </div>
+
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="printTxDetails"
+                       t-model="state.printTxDetails"/>
+                <label class="form-check-label" for="printTxDetails">
+                  <strong>Transaction detail rows</strong>
+                  <span class="d-block text-muted small">Show the full transaction list</span>
+                </label>
+              </div>
+            </div>
+            <div class="modal-footer py-2">
+              <button class="btn btn-secondary btn-sm" t-on-click="closePrintModal">Cancel</button>
+              <button class="btn btn-dark btn-sm" t-on-click="doPrint">
+                <i class="fa fa-print me-1"/> Print PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </t>
+
     <!-- ── Filter Bar ── -->
     <div class="card mb-3 p-3 bg-light">
 
@@ -37,7 +89,7 @@
         <!-- Row 2: Month picker | Year picker | Custom range | Partner -->
         <div class="row g-2 align-items-end">
 
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
                 <label class="form-label mb-1 small text-muted">Month</label>
                 <select class="form-select form-select-sm" t-on-change="onMonthChange">
                     <t t-foreach="monthOptions" t-as="mo" t-key="mo.value">
@@ -49,7 +101,7 @@
                 </select>
             </div>
 
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
                 <label class="form-label mb-1 small text-muted">Year</label>
                 <select class="form-select form-select-sm" t-on-change="onYearChange">
                     <t t-foreach="yearOptions" t-as="yr" t-key="yr">
@@ -61,21 +113,21 @@
                 </select>
             </div>
 
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
                 <label class="form-label mb-1 small text-muted">From</label>
                 <input type="date" class="form-control form-control-sm"
                        t-model="state.from_date"
                        t-on-change="onDateChange"/>
             </div>
 
-            <div class="col-auto">
+            <div class="col-6 col-md-auto">
                 <label class="form-label mb-1 small text-muted">To</label>
                 <input type="date" class="form-control form-control-sm"
                        t-model="state.to_date"
                        t-on-change="onDateChange"/>
             </div>
 
-            <div class="col">
+            <div class="col-12 col-md">
                 <label class="form-label mb-1 small text-muted">Partner</label>
                 <input type="text" class="form-control form-control-sm"
                        placeholder="Search partner..."
@@ -85,14 +137,15 @@
         </div>
     </div>
 
-    <div class="row">
-<div class="col-6">
-  <div class="d-flex align-items-center justify-content-between mb-1">
+    <div class="row g-3">
+<div class="col-12 col-md-6">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
     <h3 class="mb-0">Orders</h3>
     <button class="btn btn-sm btn-primary" t-on-click="createOrder">
       <i class="fa fa-plus me-1"/> New Order
     </button>
   </div>
+  <div class="table-responsive">
   <table class="table table-bordered table-sm">
     <thead class="table-light">
       <tr>
@@ -127,15 +180,17 @@
       </t>
     </tbody>
   </table>
+  </div>
 </div>
 
-        <div class="col-6">
-  <div class="d-flex align-items-center justify-content-between mb-1">
+        <div class="col-12 col-md-6">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
     <h3 class="mb-0">Purchase</h3>
     <button class="btn btn-sm btn-success" t-on-click="createPurchase">
       <i class="fa fa-plus me-1"/> New Purchase
     </button>
   </div>
+  <div class="table-responsive">
   <table class="table table-bordered table-sm">
     <thead class="table-light">
       <tr>
@@ -170,12 +225,15 @@
       </t>
     </tbody>
   </table>
+  </div>
 </div>
 </div>
-    <div class="row">
-<div class="col-6">
+
+    <div class="row g-3 mt-1">
+<div class="col-12 col-md-6">
 <h3>Quotations</h3>
-    <table class="table table-bordered">
+  <div class="table-responsive">
+    <table class="table table-bordered table-sm">
 <tr>
     <th>Quotation</th>
     <th>Partner</th>
@@ -198,11 +256,13 @@
 </tr>
 </t>
 </table>
+  </div>
 </div>
 
-        <div class="col-6">
+        <div class="col-12 col-md-6">
 <h3>RFQ</h3>
-            <table class="table table-bordered">
+  <div class="table-responsive">
+            <table class="table table-bordered table-sm">
 <tr><th>Order</th>
     <th>Partner</th>
     <th>Status</th>
@@ -224,11 +284,26 @@
 </tr>
 </t>
 </table>
+  </div>
 </div>
 </div>
 
-    <h3>Transactions</h3>
-<table class="table table-bordered">
+    <!-- ── Transactions ── -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3 mb-1">
+      <h3 class="mb-0">Transactions</h3>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm text-white" style="background-color:#0d6efd;"
+                t-on-click="() => this.createPayment('inbound')">
+          <i class="fa fa-arrow-down me-1"/> New Receive
+        </button>
+        <button class="btn btn-sm text-white" style="background-color:#dc3545;"
+                t-on-click="() => this.createPayment('outbound')">
+          <i class="fa fa-arrow-up me-1"/> New Payment
+        </button>
+      </div>
+    </div>
+    <div class="table-responsive">
+<table class="table table-bordered table-sm">
     <thead>
         <tr>
             <th t-on-click="() => this.sortTransactions('name')" style="cursor: pointer;">
@@ -252,9 +327,6 @@
         </tr>
     </thead>
     <tbody>
-        <t t-set="count" t-value="0"/>
-        <t t-set="received_total" t-value="0"/>
-        <t t-set="paid_total" t-value="0"/>
         <t t-foreach="filteredTransactions" t-as="t" t-key="t.id">
             <tr>
                 <td>
@@ -267,17 +339,22 @@
                     <t t-esc="t.partner"/>
                 </a></td>
                 <td><t t-esc="t.ledger"/></td>
-                <td><t t-esc="t.received"/></td>
-                <td><t t-esc="t.paid"/></td>
+                <td class="font-monospace" style="color:#0d6efd;"><t t-esc="t.received"/></td>
+                <td class="font-monospace" style="color:#dc3545;"><t t-esc="t.paid"/></td>
                 <td><t t-esc="t.state"/></td>
             </tr>
-            <t t-set="received_total" t-value="received_total+t.received"/>
-            <t t-set="paid_total" t-value="paid_total+t.paid"/>
-            <t t-set="count" t-value="count+1"/>
         </t>
     </tbody>
-    <tfoot><tr><td><t t-esc="count"/> Record </td><td></td><td></td><td><t t-esc="received_total"/> </td><td><t t-esc="paid_total"/></td></tr></tfoot>
+    <tfoot class="table-secondary fw-bold">
+        <tr>
+            <td colspan="3">Total (<t t-esc="filteredTransactions.length"/> records)</td>
+            <td class="font-monospace" style="color:#0d6efd;"><t t-esc="txTotalReceived"/></td>
+            <td class="font-monospace" style="color:#dc3545;"><t t-esc="txTotalPaid"/></td>
+            <td/>
+        </tr>
+    </tfoot>
 </table>
+    </div>
 </div>
 </t>
 </templates>

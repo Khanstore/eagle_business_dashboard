@@ -25,29 +25,34 @@ class FinanceDashboard extends Component {
             this.yearOptions.push(y);
         }
 
+        const todayStr = this._fmt(now);
+
         this.state = useState({
-            invoices:      [],
-            vendor_bills:  [],
-            transactions:  [],
-            from_date:     this._fmt(new Date(now.getFullYear(), now.getMonth(), 1)),
-            to_date:       this._fmt(now),
-            partner_filter: '',
-            active_preset:  'this_month',
-            selected_month: this.monthOptions[0].value,
-            selected_year:  String(now.getFullYear()),
-            sortKey:   '',
-            sortOrder: 'asc',
+            invoices:          [],
+            vendor_bills:      [],
+            transactions:      [],
+            journal_balances:  [],
+            // ── Default: Today ──────────────────────────────────
+            from_date:         todayStr,
+            to_date:           todayStr,
+            partner_filter:    '',
+            active_preset:     'today',
+            selected_month:    this.monthOptions[0].value,
+            selected_year:     String(now.getFullYear()),
+            sortKey:           '',
+            sortOrder:         'asc',
             partner_id_filter: '',
-            partnerOptions: [],
+            partnerOptions:    [],
             // Print modal
-            showPrintModal: false,
-            printDetails: true,
-            printInvoiceLines: false,
-            printVendorLines: false,
+            showPrintModal:      false,
+            printInvoiceLines:   false,
+            printVendorLines:    false,
+            printJournalBalance: true,
+            printTxDetails:      true,
         });
 
         // Store lines outside OWL state — reactive proxy strips nested arrays
-        this._invoiceLines = {};   // { id: [...lines] }
+        this._invoiceLines = {};
         this._vendorLines  = {};
 
         onWillStart(async () => { await this.loadData(); });
@@ -106,11 +111,17 @@ class FinanceDashboard extends Component {
     // ── Data ──────────────────────────────────────────────────
     async loadData() {
         try {
-            const data = await this.orm.call(
-                "dashboard.data", "get_finance_dashboard",
-                [this.state.from_date || false, this.state.to_date || false]
-            );
-            // Cache lines in plain JS objects (outside OWL proxy)
+            const [data, journalBalances] = await Promise.all([
+                this.orm.call(
+                    "dashboard.data", "get_finance_dashboard",
+                    [this.state.from_date || false, this.state.to_date || false]
+                ),
+                this.orm.call(
+                    "dashboard.data", "get_journal_balance",
+                    [this.state.from_date || false, this.state.to_date || false]
+                ),
+            ]);
+
             this._invoiceLines = {};
             this._vendorLines  = {};
             const invoices = (data.invoices || []).map(r => {
@@ -123,11 +134,12 @@ class FinanceDashboard extends Component {
                 const { lines, ...rest } = r;
                 return rest;
             });
-            this.state.invoices     = invoices;
-            this.state.vendor_bills = vendorBills;
-            this.state.transactions = data.transactions || [];
 
-            // Build unique partner list from all records for the dropdown
+            this.state.invoices         = invoices;
+            this.state.vendor_bills     = vendorBills;
+            this.state.transactions     = data.transactions || [];
+            this.state.journal_balances = journalBalances || [];
+
             const partnerMap = {};
             [...invoices, ...vendorBills, ...(data.transactions || [])].forEach(r => {
                 if (r.partner_id && r.partner) partnerMap[r.partner_id] = r.partner;
@@ -135,6 +147,7 @@ class FinanceDashboard extends Component {
             this.state.partnerOptions = Object.entries(partnerMap)
                 .map(([id, name]) => ({ id: String(id), name }))
                 .sort((a, b) => a.name.localeCompare(b.name));
+
             if (this.state.sortKey) this._applySort();
         } catch (e) {
             console.error("FinanceDashboard failed to load:", e);
@@ -143,9 +156,9 @@ class FinanceDashboard extends Component {
 
     // ── Partner filter ────────────────────────────────────────
     _matchesPartner(r) {
-        const q = this.state.partner_filter.trim().toLowerCase();
+        const q   = this.state.partner_filter.trim().toLowerCase();
         const pid = this.state.partner_id_filter;
-        const nameOk = !q || (r.partner || '').toLowerCase().includes(q);
+        const nameOk = !q   || (r.partner || '').toLowerCase().includes(q);
         const idOk   = !pid || String(r.partner_id) === pid;
         return nameOk && idOk;
     }
@@ -174,20 +187,30 @@ class FinanceDashboard extends Component {
 
     // ── Totals ────────────────────────────────────────────────
     _sum(arr, field) { return arr.reduce((s, r) => s + (r[field] || 0), 0).toFixed(2); }
+    _cnt(arr, field) { return arr.reduce((s, r) => s + (r[field] || 0), 0); }
 
-    get invoiceTotalAmount()   { return this._sum(this.filteredInvoices,    'amount'); }
-    get invoiceTotalResidual() { return this._sum(this.filteredInvoices,    'residual'); }
-    get vendorTotalAmount()    { return this._sum(this.filteredVendorBills, 'amount'); }
-    get vendorTotalResidual()  { return this._sum(this.filteredVendorBills, 'residual'); }
-    get txTotalReceived()      { return this._sum(this.filteredTransactions, 'received'); }
-    get txTotalPaid()          { return this._sum(this.filteredTransactions, 'paid'); }
+    get invoiceTotalAmount()    { return this._sum(this.filteredInvoices,    'amount'); }
+    get invoiceTotalResidual()  { return this._sum(this.filteredInvoices,    'residual'); }
+    get vendorTotalAmount()     { return this._sum(this.filteredVendorBills, 'amount'); }
+    get vendorTotalResidual()   { return this._sum(this.filteredVendorBills, 'residual'); }
+    get txTotalReceived()       { return this._sum(this.filteredTransactions, 'received'); }
+    get txTotalPaid()           { return this._sum(this.filteredTransactions, 'paid'); }
+
+    // ── Journal Balance Totals ────────────────────────────────
+    get jbTotalOpening()       { return this._sum(this.state.journal_balances, 'opening'); }
+    get jbTotalDeposit()       { return this._sum(this.state.journal_balances, 'deposit'); }
+    get jbTotalDepositCount()  { return this._cnt(this.state.journal_balances, 'deposit_count'); }
+    get jbTotalWithdraw()      { return this._sum(this.state.journal_balances, 'withdraw'); }
+    get jbTotalWithdrawCount() { return this._cnt(this.state.journal_balances, 'withdraw_count'); }
+    get jbTotalChange()        { return this._sum(this.state.journal_balances, 'change'); }
+    get jbTotalChangePositive() { return parseFloat(this.jbTotalChange) >= 0; }
+    get jbTotalClosing()       { return this._sum(this.state.journal_balances, 'closing'); }
 
     // ── Grouped transactions (subtotal rows per journal when sorted by journal) ──
     get groupedTransactions() {
         const rows = this.filteredTransactions;
         if (this.state.sortKey !== 'journal') return rows.map(r => ({ ...r, _type: 'data' }));
 
-        // Collect consecutive groups by journal name
         const groups = [];
         let cur = null;
         for (const tx of rows) {
@@ -199,7 +222,6 @@ class FinanceDashboard extends Component {
         }
         if (cur) groups.push(cur);
 
-        // Flatten: data rows then one subtotal row per group
         const result = [];
         for (const g of groups) {
             for (const item of g.items) result.push({ ...item, _type: 'data' });
@@ -211,33 +233,30 @@ class FinanceDashboard extends Component {
                 _count:    g.items.length,
                 _received: sumR.toFixed(2),
                 _paid:     sumP.toFixed(2),
-                id:        'sub_' + g.journal,   // unique key for t-key
+                id:        'sub_' + g.journal,
             });
         }
         return result;
     }
 
     // ── Print modal ───────────────────────────────────────────
-    openPrintModal() { this.state.showPrintModal = true; }
+    openPrintModal()  { this.state.showPrintModal = true; }
     closePrintModal() { this.state.showPrintModal = false; }
 
-doPrint() {
-        // Snapshot everything BEFORE touching state — OWL reactive proxy
-        // can trigger re-render and lose lines data if state changes first
-        const includeTxDetails   = this.state.printDetails;
-        const includeInvLines    = this.state.printInvoiceLines;
-        const includeVendorLines = this.state.printVendorLines;
+    doPrint() {
+        // Snapshot state BEFORE touching reactive proxy
+        const includeInvLines       = this.state.printInvoiceLines;
+        const includeVendorLines    = this.state.printVendorLines;
+        const includeJournalBalance = this.state.printJournalBalance;
+        const includeTxDetails      = this.state.printTxDetails;
 
-        // Deep-copy state data and reattach lines from the plain JS cache
-        const invoices = this.filteredInvoices.map(r => ({
-            ...r, lines: this._invoiceLines[r.id] || []
-        }));
-        const vendorBills = this.filteredVendorBills.map(r => ({
-            ...r, lines: this._vendorLines[r.id] || []
-        }));
-        const transactions = [...this.filteredTransactions];
+        // Deep-copy data and reattach invoice/vendor lines from the plain JS cache
+        const invoices        = this.filteredInvoices.map(r => ({ ...r, lines: this._invoiceLines[r.id] || [] }));
+        const vendorBills     = this.filteredVendorBills.map(r => ({ ...r, lines: this._vendorLines[r.id] || [] }));
+        const groupedTx       = this.groupedTransactions;
+        const transactions    = [...this.filteredTransactions];
+        const journalBalances = [...this.state.journal_balances];
 
-        // Close modal after snapshot
         this.state.showPrintModal = false;
 
         const fromLabel = this.state.from_date || 'All';
@@ -248,75 +267,161 @@ doPrint() {
 
         const fmt = (v) => { const n = parseFloat(v); return isNaN(n) ? '0.00' : n.toFixed(2); };
 
-        const totalInvAmount   = invoices.reduce((s,r) => s + (parseFloat(r.amount)    || 0), 0);
-        const totalInvResidual = invoices.reduce((s,r) => s + (parseFloat(r.residual)  || 0), 0);
-        const totalVenAmount   = vendorBills.reduce((s,r) => s + (parseFloat(r.amount)   || 0), 0);
-        const totalVenResidual = vendorBills.reduce((s,r) => s + (parseFloat(r.residual) || 0), 0);
-        const totalReceived    = transactions.reduce((s,r) => s + (parseFloat(r.received) || 0), 0);
-        const totalPaid        = transactions.reduce((s,r) => s + (parseFloat(r.paid)     || 0), 0);
+        const totalInvAmount   = invoices.reduce((s,r)     => s + (parseFloat(r.amount)    || 0), 0);
+        const totalInvResidual = invoices.reduce((s,r)     => s + (parseFloat(r.residual)  || 0), 0);
+        const totalVenAmount   = vendorBills.reduce((s,r)  => s + (parseFloat(r.amount)    || 0), 0);
+        const totalVenResidual = vendorBills.reduce((s,r)  => s + (parseFloat(r.residual)  || 0), 0);
+        const totalReceived    = transactions.reduce((s,r) => s + (parseFloat(r.received)  || 0), 0);
+        const totalPaid        = transactions.reduce((s,r) => s + (parseFloat(r.paid)      || 0), 0);
 
-        // Simple flat table (used for transactions)
-        const buildFlatTable = (headers, rows) => {
-            if (!rows || rows.length === 0) return '<p style="color:#888;font-size:11px;margin:4px 0 12px;">No records found.</p>';
-            const ths = headers.map(h => `<th>${h}</th>`).join('');
-            const trs = rows.map(r => `<tr>${r.map(c => `<td>${c != null ? c : ''}</td>`).join('')}</tr>`).join('');
-            return `<table class="detail-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+        // ── Journal Balance table (Previous Balance | Deposit | Withdraw | Change | New Balance) ──
+        const buildJournalTable = (rows) => {
+            if (!rows || rows.length === 0)
+                return '<p style="color:#888;font-size:11px;margin:4px 0 12px;">No bank / cash journals found.</p>';
+
+            const totOpening  = rows.reduce((s,r) => s + (r.opening  || 0), 0);
+            const totDeposit  = rows.reduce((s,r) => s + (r.deposit  || 0), 0);
+            const totDepCnt   = rows.reduce((s,r) => s + (r.deposit_count  || 0), 0);
+            const totWithdraw = rows.reduce((s,r) => s + (r.withdraw || 0), 0);
+            const totWitCnt   = rows.reduce((s,r) => s + (r.withdraw_count || 0), 0);
+            const totChange   = rows.reduce((s,r) => s + (r.change   || 0), 0);
+            const totClosing  = rows.reduce((s,r) => s + (r.closing  || 0), 0);
+
+            const bodyRows = rows.map(r => {
+                const closingStyle = r.closing >= 0 ? 'color:#0d6efd' : 'color:#dc3545';
+                const changeStyle  = r.change  >= 0 ? 'color:#198754' : 'color:#dc3545';
+                const changeSign   = r.change  >= 0 ? '+' : '';
+                return `<tr>
+                    <td>${r.journal_name || ''}</td>
+                    <td style="text-align:right">${fmt(r.opening)}</td>
+                    <td style="text-align:right;color:#198754">${fmt(r.deposit)} <span style="color:#6c757d;font-size:9px">(${r.deposit_count || 0})</span></td>
+                    <td style="text-align:right;color:#dc3545">${fmt(r.withdraw)} <span style="color:#6c757d;font-size:9px">(${r.withdraw_count || 0})</span></td>
+                    <td style="text-align:right;font-weight:bold;${changeStyle}">${changeSign}${fmt(r.change)}</td>
+                    <td style="text-align:right;font-weight:bold;${closingStyle}">${fmt(r.closing)}</td>
+                </tr>`;
+            }).join('');
+
+            const totChangeStyle = totChange >= 0 ? 'color:#198754' : 'color:#dc3545';
+            const totChangeSign  = totChange >= 0 ? '+' : '';
+
+            return `<table class="jb-table">
+                <thead><tr>
+                    <th>Journal Name</th>
+                    <th style="text-align:right">Previous Balance</th>
+                    <th style="text-align:right">Deposit</th>
+                    <th style="text-align:right">Withdraw</th>
+                    <th style="text-align:right">Change</th>
+                    <th style="text-align:right">New Balance</th>
+                </tr></thead>
+                <tbody>${bodyRows}</tbody>
+                <tfoot><tr>
+                    <td>Total (${rows.length} journals)</td>
+                    <td style="text-align:right">${fmt(totOpening)}</td>
+                    <td style="text-align:right;color:#198754">${fmt(totDeposit)} <span style="color:#6c757d;font-size:9px">(${totDepCnt})</span></td>
+                    <td style="text-align:right;color:#dc3545">${fmt(totWithdraw)} <span style="color:#6c757d;font-size:9px">(${totWitCnt})</span></td>
+                    <td style="text-align:right;${totChangeStyle}">${totChangeSign}${fmt(totChange)}</td>
+                    <td style="text-align:right;color:#0d6efd">${fmt(totClosing)}</td>
+                </tr></tfoot>
+            </table>`;
         };
 
-        // Renders each move as a header row + optional indented lines sub-table
-        const buildMoveTable = (records, headerCols, includeLines) => {
+        // ── Invoice / Vendor Bill table with product lines sub-table (Image-2 style) ──
+        const buildMoveTable = (records, includeLines) => {
             if (!records || records.length === 0)
                 return '<p style="color:#888;font-size:11px;margin:4px 0 12px;">No records found.</p>';
 
-            const lineHeaders = ['Product', 'Description', 'Qty', 'UoM', 'Unit Price', 'Disc%', 'Taxes', 'Subtotal'];
-            const colCount = headerCols.length;
+            let html = `<table class="detail-table">
+                <thead><tr>
+                    <th>Invoice</th><th>Partner</th><th>Date</th>
+                    <th>Due Date</th><th style="text-align:right">Amount</th>
+                    <th style="text-align:right">Outstanding</th><th>Status</th>
+                </tr></thead>
+                <tbody>`;
 
-            let rows = '';
             for (const r of records) {
-                // Main invoice/bill row
-                const cells = headerCols.map(col => `<td>${r[col] != null ? r[col] : ''}</td>`).join('');
-                rows += `<tr class="move-header">${cells}</tr>`;
+                html += `<tr class="move-header">
+                    <td>${r.name || ''}</td>
+                    <td>${r.partner || ''}</td>
+                    <td>${r.date || ''}</td>
+                    <td>${r.due_date || ''}</td>
+                    <td style="text-align:right">${fmt(r.amount)}</td>
+                    <td style="text-align:right">${fmt(r.residual)}</td>
+                    <td>${r.state || ''}</td>
+                </tr>`;
 
-                // Lines sub-table if toggled on
                 if (includeLines && r.lines && r.lines.length > 0) {
-                    const linesHtml = r.lines.map(l => `
-                        <tr class="line-row">
-                            <td>${l.product || ''}</td>
-                            <td>${l.description || ''}</td>
-                            <td style="text-align:right">${fmt(l.qty)}</td>
-                            <td>${l.uom || ''}</td>
-                            <td style="text-align:right">${fmt(l.price_unit)}</td>
-                            <td style="text-align:right">${fmt(l.discount)}</td>
-                            <td>${l.tax || ''}</td>
-                            <td style="text-align:right">${fmt(l.subtotal)}</td>
-                        </tr>`).join('');
-                    rows += `<tr><td colspan="${colCount}" style="padding:0 0 6px 24px;">
+                    const lineRows = r.lines.map(l => `<tr class="line-row">
+                        <td>${l.product || ''}</td>
+                        <td style="text-align:right">${fmt(l.qty)}</td>
+                        <td style="text-align:right">${fmt(l.price_unit)}</td>
+                        <td style="text-align:right">${fmt(l.discount)}</td>
+                        <td>${l.tax || ''}</td>
+                        <td style="text-align:right">${fmt(l.subtotal)}</td>
+                    </tr>`).join('');
+
+                    html += `<tr><td colspan="7" style="padding:0 0 8px 28px;border-bottom:none;">
                         <table class="lines-table">
-                            <thead><tr>${lineHeaders.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-                            <tbody>${linesHtml}</tbody>
+                            <thead><tr>
+                                <th>Product Name</th><th style="text-align:right">Qty</th>
+                                <th style="text-align:right">Rate</th><th style="text-align:right">Discount</th>
+                                <th>Tax</th><th style="text-align:right">Total</th>
+                            </tr></thead>
+                            <tbody>${lineRows}</tbody>
                         </table>
                     </td></tr>`;
                 }
             }
 
-            const ths = headerCols.map(col => {
-                const label = {name:'Reference', partner:'Partner', date:'Date',
-                    due_date:'Due Date', amount:'Amount', residual:'Balance', state:'Status'}[col] || col;
-                return `<th>${label}</th>`;
-            }).join('');
-
-            return `<table class="detail-table">
-                <thead><tr>${ths}</tr></thead>
-                <tbody>${rows}</tbody>
-            </table>`;
+            html += '</tbody></table>';
+            return html;
         };
 
-        const invCols    = ['name','partner','date','due_date','amount','residual','state'];
-        const invoiceDetail = buildMoveTable(invoices, invCols, includeInvLines);
-        const vendorDetail  = buildMoveTable(vendorBills, invCols, includeVendorLines);
-        const txRows        = transactions.map(r => [r.name, r.partner, r.date, r.journal, r.type, fmt(r.received), fmt(r.paid), r.state]);
-        const txDetail      = includeTxDetails
-            ? buildFlatTable(['Reference','Partner','Date','Journal','Type','Received','Paid','Status'], txRows)
+        // ── Transactions table (with journal subtotal rows when grouped) ──
+        const buildTxTable = (rows) => {
+            if (!rows || rows.length === 0)
+                return '<p style="color:#888;font-size:11px;margin:4px 0 12px;">No records found.</p>';
+
+            const headers = ['Reference','Partner','Date','Journal','Received','Paid','Status'];
+            const ths = headers.map(h => `<th>${h}</th>`).join('');
+
+            const bodyRows = rows.map(tx => {
+                if (tx._type === 'subtotal') {
+                    return `<tr class="subtotal-row">
+                        <td></td><td></td><td></td>
+                        <td>${tx._journal} — total (${tx._count})</td>
+                        <td style="text-align:right;color:#0d6efd">${tx._received}</td>
+                        <td style="text-align:right;color:#dc3545">${tx._paid}</td>
+                        <td></td>
+                    </tr>`;
+                }
+                return `<tr>
+                    <td>${tx.name || ''}</td>
+                    <td>${tx.partner || ''}</td>
+                    <td>${tx.date || ''}</td>
+                    <td>${tx.journal || ''}</td>
+                    <td style="text-align:right;color:#0d6efd">${fmt(tx.received)}</td>
+                    <td style="text-align:right;color:#dc3545">${fmt(tx.paid)}</td>
+                    <td>${tx.state || ''}</td>
+                </tr>`;
+            }).join('');
+
+            return `<table class="detail-table"><thead><tr>${ths}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+        };
+
+        const invoiceDetail = buildMoveTable(invoices, includeInvLines);
+        const vendorDetail  = buildMoveTable(vendorBills, includeVendorLines);
+
+        const journalSectionHtml = includeJournalBalance
+            ? `<h2>Journal Balance (${journalBalances.length} journals)</h2>${buildJournalTable(journalBalances)}`
+            : '';
+
+        const txSectionHtml = includeTxDetails
+            ? `<h2>Transactions (${transactions.length} records)</h2>
+               <table class="summary-table">
+                 <thead><tr><th>Section</th><th style="text-align:right">Total Received</th><th style="text-align:right">Total Paid</th></tr></thead>
+                 <tbody><tr><td>Transactions</td><td style="text-align:right">${fmt(totalReceived)}</td><td style="text-align:right">${fmt(totalPaid)}</td></tr></tbody>
+               </table>
+               ${buildTxTable(groupedTx)}`
             : '';
 
         const printWin = window.open('', '_blank', 'width=1200,height=800');
@@ -335,14 +440,24 @@ doPrint() {
     .summary-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     .summary-table th, .summary-table td { padding: 4px 8px; border: 1px solid #ccc; font-size: 12px; }
     .summary-table th { background: #f0f0f0; }
+    /* Journal balance */
+    .jb-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px; }
+    .jb-table th { background: #222; color: #fff; padding: 4px 8px; border: 1px solid #444; text-align: left; }
+    .jb-table td { padding: 4px 8px; border: 1px solid #ccc; vertical-align: middle; }
+    .jb-table tbody tr:nth-child(even) td { background: #f8f8f8; }
+    .jb-table tfoot td { background: #e8e8e8; font-weight: bold; border-top: 2px solid #555; }
+    /* Invoice / vendor bill / transactions table */
     .detail-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 10px; }
     .detail-table th { background: #f0f0f0; padding: 3px 6px; border: 1px solid #ccc; text-align: left; }
     .detail-table td { padding: 3px 6px; border: 1px solid #ddd; vertical-align: top; }
     .move-header td { background: #fafafa; font-weight: 500; }
-    .lines-table { width: 100%; border-collapse: collapse; font-size: 9px; margin: 2px 0; }
+    .subtotal-row td { background: #eef1f4; font-weight: bold; font-style: italic; border-top: 2px solid #999; }
+    /* Product lines sub-table */
+    .lines-table { width: 100%; border-collapse: collapse; font-size: 9px; margin: 2px 0 4px; }
     .lines-table th { background: #e8f0fe; padding: 2px 5px; border: 1px solid #c5d5f5; text-align: left; }
     .lines-table td { padding: 2px 5px; border: 1px solid #dde5f8; }
-    .lines-table tr:nth-child(even) td { background: #f5f8ff; }
+    .lines-table tbody tr:nth-child(even) td { background: #f5f8ff; }
+    /* Summary conclusion */
     .conclusion-table { border-collapse: collapse; margin: 10px 0 18px; min-width: 420px; }
     .conclusion-table th, .conclusion-table td { padding: 5px 12px; border: 1px solid #999; font-size: 12px; }
     .conclusion-table thead tr { background: #e8e8e8; font-weight: bold; }
@@ -371,6 +486,8 @@ doPrint() {
     </tbody>
   </table>
 
+  ${journalSectionHtml}
+
   <h2>Invoices (${invoices.length} records)</h2>
   <table class="summary-table">
     <thead><tr><th>Section</th><th style="text-align:right">Total Amount</th><th style="text-align:right">Outstanding</th></tr></thead>
@@ -385,12 +502,7 @@ doPrint() {
   </table>
   ${vendorDetail}
 
-  <h2>Transactions (${transactions.length} records)</h2>
-  <table class="summary-table">
-    <thead><tr><th>Section</th><th style="text-align:right">Total Received</th><th style="text-align:right">Total Paid</th></tr></thead>
-    <tbody><tr><td>Transactions</td><td style="text-align:right">${fmt(totalReceived)}</td><td style="text-align:right">${fmt(totalPaid)}</td></tr></tbody>
-  </table>
-  ${txDetail}
+  ${txSectionHtml}
 </body>
 </html>`);
         printWin.document.close();

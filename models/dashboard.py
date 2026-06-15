@@ -31,13 +31,44 @@ class DashboardData(models.AbstractModel):
         payments = self.env['account.payment'].search(payment_domain)
         rfq = self.env['purchase.order'].search(rfq_domain)
 
+        # ── Line item helpers (for printable order/purchase lines) ──────
+        def sale_line_rows(order):
+            rows = []
+            for l in order.order_line.filtered(lambda x: not x.display_type):
+                rows.append({
+                    "product":    l.product_id.name or l.name or "",
+                    "qty":        l.product_uom_qty,
+                    "uom":        l.product_uom.name or "",
+                    "price_unit": l.price_unit,
+                    "discount":   getattr(l, 'discount', 0.0) or 0.0,
+                    "tax":        ", ".join(l.tax_id.mapped("name")) if hasattr(l, 'tax_id') else "",
+                    "subtotal":   l.price_subtotal,
+                })
+            return rows
+
+        def purchase_line_rows(order):
+            rows = []
+            for l in order.order_line.filtered(lambda x: not x.display_type):
+                rows.append({
+                    "product":    l.product_id.name or l.name or "",
+                    "qty":        l.product_qty,
+                    "uom":        l.product_uom.name or "",
+                    "price_unit": l.price_unit,
+                    "discount":   getattr(l, 'discount', 0.0) or 0.0,
+                    "tax":        ", ".join(l.taxes_id.mapped("name")) if hasattr(l, 'taxes_id') else "",
+                    "subtotal":   l.price_subtotal,
+                })
+            return rows
+
         return {
             "quotations": [{
                 "id": q.id,
                 "name": q.name,
                 "partner": q.partner_id.name or "Public User",
+                "partner_id": q.partner_id.id,
                 "status": q.state,
-                "amount": q.amount_total
+                "amount": q.amount_total,
+                "lines": sale_line_rows(q),
             } for q in quotations],
             "orders": [{
                 "id": o.id,
@@ -46,7 +77,8 @@ class DashboardData(models.AbstractModel):
                 "partner_id": o.partner_id.id,
                 "status": o.state,
                 "invoice_status": o.invoice_status,
-                "amount": o.amount_total
+                "amount": o.amount_total,
+                "lines": sale_line_rows(o),
             } for o in orders],
             "purchases": [{
                 "id": p.id,
@@ -55,20 +87,22 @@ class DashboardData(models.AbstractModel):
                 "partner_id": p.partner_id.id,
                 "status": p.state,
                 "billing_status": p.invoice_status,
-                "amount": p.amount_total
+                "amount": p.amount_total,
+                "lines": purchase_line_rows(p),
             } for p in purchases],
             "rfq": [{
                 "id": r.id,
                 "name": r.name,
-                "partner_id": r.partner_id.id ,
+                "partner_id": r.partner_id.id,
                 "partner": r.partner_id.name or "Supplier",
                 "status": r.state,
-                "amount": r.amount_total
+                "amount": r.amount_total,
+                "lines": purchase_line_rows(r),
             } for r in rfq],
             "transactions": [{
                 "id": t.id,
                 "name": t.name or "Draft Payment",
-                "partner_id": t.partner_id.id ,
+                "partner_id": t.partner_id.id,
                 "partner": t.partner_id.name or "No Partner",
                 "ledger": t.journal_id.name,
                 "received": t.amount if t.payment_type == 'inbound' else 0,
@@ -94,7 +128,7 @@ class DashboardData(models.AbstractModel):
 
         def move_row(m):
             lines = []
-            for l in m.invoice_line_ids.filtered(lambda x: not x.display_type):
+            for l in m.invoice_line_ids.filtered(lambda x: x.display_type in (False, 'product')):
                 lines.append({
                     "product":     l.product_id.name or l.name or "",
                     "description": l.name or "",
@@ -134,3 +168,81 @@ class DashboardData(models.AbstractModel):
                 "state":    t.state,
             } for t in payments],
         }
+
+    @api.model
+    def get_journal_balance(self, from_date=False, to_date=False):
+        """
+        Return one row per bank/cash journal with:
+          opening        – balance BEFORE from_date (the "previous balance")
+          deposit        – credits posted during the period (money IN)
+          deposit_count  – number of credit lines during the period
+          withdraw       – debits  posted during the period (money OUT)
+          withdraw_count – number of debit lines during the period
+          change         – deposit - withdraw  (the net movement, e.g. -1000)
+          closing        – opening + change     (the "new balance")
+        """
+        journals = self.env['account.journal'].search(
+            [('type', 'in', ['bank', 'cash'])],
+            order='name asc',
+        )
+        result = []
+        for journal in journals:
+            account = journal.default_account_id
+            if not account:
+                continue
+
+            # ── Opening / previous balance (all posted lines BEFORE from_date) ──
+            opening = 0.0
+            if from_date:
+                self.env.cr.execute("""
+                    SELECT COALESCE(SUM(aml.credit - aml.debit), 0.0)
+                    FROM account_move_line aml
+                    JOIN account_move am ON am.id = aml.move_id
+                    WHERE aml.account_id = ANY(%s)
+                      AND am.state = 'posted'
+                      AND aml.date < %s
+                """, ([account.id], from_date))
+                opening = float(self.env.cr.fetchone()[0] or 0.0)
+
+            # ── Period deposit (credit) & withdraw (debit) + counts ──────────
+            date_parts = []
+            params = [account.id]
+            if from_date:
+                date_parts.append("aml.date >= %s")
+                params.append(from_date)
+            if to_date:
+                date_parts.append("aml.date <= %s")
+                params.append(to_date)
+            date_clause = ("AND " + " AND ".join(date_parts)) if date_parts else ""
+
+            self.env.cr.execute("""
+                SELECT
+                    COALESCE(SUM(aml.credit), 0.0)         AS deposit,
+                    COALESCE(SUM(aml.debit),  0.0)         AS withdraw,
+                    COUNT(*) FILTER (WHERE aml.credit > 0) AS deposit_count,
+                    COUNT(*) FILTER (WHERE aml.debit  > 0) AS withdraw_count
+                FROM account_move_line aml
+                JOIN account_move am ON am.id = aml.move_id
+                WHERE aml.account_id = %%s
+                  AND am.state = 'posted'
+                  %s
+            """ % date_clause, params)
+            row = self.env.cr.fetchone()
+            deposit        = float(row[0] or 0.0)
+            withdraw       = float(row[1] or 0.0)
+            deposit_count  = int(row[2] or 0)
+            withdraw_count = int(row[3] or 0)
+            change         = deposit - withdraw
+            closing        = opening + change
+
+            result.append({
+                'journal_name':   journal.name,
+                'opening':        round(opening,  2),
+                'deposit':        round(deposit,  2),
+                'deposit_count':  deposit_count,
+                'withdraw':       round(withdraw, 2),
+                'withdraw_count': withdraw_count,
+                'change':         round(change,   2),
+                'closing':        round(closing,  2),
+            })
+        return result
