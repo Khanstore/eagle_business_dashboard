@@ -151,6 +151,7 @@
       <tr>
         <th>Order</th>
         <th>Partner</th>
+        <th t-if="showDateColumn">Date</th>
         <th>Status</th>
         <th>Invoice Status</th>
         <th>Amount</th>
@@ -169,6 +170,7 @@
               <t t-esc="o.partner"/>
             </a>
           </td>
+          <td t-if="showDateColumn"><t t-esc="o.date"/></td>
           <td><t t-esc="o.status"/></td>
           <td>
             <span t-attf-class="badge #{o.invoice_status == 'invoiced' ? 'bg-success' : o.invoice_status == 'to invoice' ? 'bg-warning text-dark' : o.invoice_status == 'upselling' ? 'bg-info' : 'bg-secondary'}">
@@ -196,6 +198,7 @@
       <tr>
         <th>Order</th>
         <th>Partner</th>
+        <th t-if="showDateColumn">Date</th>
         <th>Status</th>
         <th>Billing Status</th>
         <th>Amount</th>
@@ -214,6 +217,7 @@
               <t t-esc="p.partner"/>
             </a>
           </td>
+          <td t-if="showDateColumn"><t t-esc="p.date"/></td>
           <td><t t-esc="p.status"/></td>
           <td>
             <span t-attf-class="badge #{p.billing_status == 'invoiced' ? 'bg-success' : p.billing_status == 'to invoice' ? 'bg-warning text-dark' : 'bg-secondary'}">
@@ -237,6 +241,7 @@
 <tr>
     <th>Quotation</th>
     <th>Partner</th>
+    <th t-if="showDateColumn">Date</th>
     <th>Status</th>
     <th>Amount</th></tr>
         <t t-foreach="filteredQuotations" t-as="q" t-key="q.id">
@@ -251,6 +256,7 @@
        t-on-click.prevent="() => this.openPartner(q.partner_id)">
         <t t-esc="q.partner"/>
     </a></td>
+    <td t-if="showDateColumn"><t t-esc="q.date"/></td>
     <td><t t-esc="q.status"/></td>
     <td><t t-esc="q.amount"/></td>
 </tr>
@@ -265,6 +271,7 @@
             <table class="table table-bordered table-sm">
 <tr><th>Order</th>
     <th>Partner</th>
+    <th t-if="showDateColumn">Date</th>
     <th>Status</th>
     <th>Amount</th></tr>
                 <t t-foreach="filteredRfq" t-as="p" t-key="p.id">
@@ -279,6 +286,7 @@
        t-on-click.prevent="() => this.openPartner(p.partner_id)">
         <t t-esc="p.partner"/>
     </a></td>
+    <td t-if="showDateColumn"><t t-esc="p.date"/></td>
     <td><t t-esc="p.status"/></td>
     <td><t t-esc="p.amount"/></td>
 </tr>
@@ -309,6 +317,9 @@
             <th t-on-click="() => this.sortTransactions('name')" style="cursor: pointer;">
                 Name <i t-attf-class="fa #{state.sortKey == 'name' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
             </th>
+            <th t-if="showDateColumn" t-on-click="() => this.sortTransactions('date')" style="cursor: pointer;">
+                Date <i t-attf-class="fa #{state.sortKey == 'date' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
+            </th>
             <th t-on-click="() => this.sortTransactions('partner')" style="cursor: pointer;">
                 Partner <i t-attf-class="fa #{state.sortKey == 'partner' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
             </th>
@@ -334,6 +345,7 @@
                         <t t-esc="t.name"/>
                     </a>
                 </td>
+                <td t-if="showDateColumn"><t t-esc="t.date"/></td>
                 <td><a href="#"
                    t-on-click.prevent="() => this.openPartner(t.partner_id)">
                     <t t-esc="t.partner"/>
@@ -347,7 +359,7 @@
     </tbody>
     <tfoot class="table-secondary fw-bold">
         <tr>
-            <td colspan="3">Total (<t t-esc="filteredTransactions.length"/> records)</td>
+            <td t-att-colspan="showDateColumn ? 4 : 3">Total (<t t-esc="filteredTransactions.length"/> records)</td>
             <td class="font-monospace" style="color:#0d6efd;"><t t-esc="txTotalReceived"/></td>
             <td class="font-monospace" style="color:#dc3545;"><t t-esc="txTotalPaid"/></td>
             <td/>

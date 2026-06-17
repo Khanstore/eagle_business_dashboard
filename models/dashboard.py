@@ -60,6 +60,15 @@ class DashboardData(models.AbstractModel):
                 })
             return rows
 
+        # ── Date formatting helper ────────────────────────────────────
+        def fmt_date(dt):
+            if not dt:
+                return ''
+            try:
+                return dt.strftime('%Y-%m-%d')
+            except Exception:
+                return str(dt)[:10]
+
         return {
             "quotations": [{
                 "id": q.id,
@@ -67,6 +76,7 @@ class DashboardData(models.AbstractModel):
                 "partner": q.partner_id.name or "Public User",
                 "partner_id": q.partner_id.id,
                 "status": q.state,
+                "date": fmt_date(q.date_order),
                 "amount": q.amount_total,
                 "lines": sale_line_rows(q),
             } for q in quotations],
@@ -77,6 +87,7 @@ class DashboardData(models.AbstractModel):
                 "partner_id": o.partner_id.id,
                 "status": o.state,
                 "invoice_status": o.invoice_status,
+                "date": fmt_date(o.date_order),
                 "amount": o.amount_total,
                 "lines": sale_line_rows(o),
             } for o in orders],
@@ -87,6 +98,7 @@ class DashboardData(models.AbstractModel):
                 "partner_id": p.partner_id.id,
                 "status": p.state,
                 "billing_status": p.invoice_status,
+                "date": fmt_date(p.date_order),
                 "amount": p.amount_total,
                 "lines": purchase_line_rows(p),
             } for p in purchases],
@@ -96,6 +108,7 @@ class DashboardData(models.AbstractModel):
                 "partner_id": r.partner_id.id,
                 "partner": r.partner_id.name or "Supplier",
                 "status": r.state,
+                "date": fmt_date(r.date_order),
                 "amount": r.amount_total,
                 "lines": purchase_line_rows(r),
             } for r in rfq],
@@ -105,6 +118,7 @@ class DashboardData(models.AbstractModel):
                 "partner_id": t.partner_id.id,
                 "partner": t.partner_id.name or "No Partner",
                 "ledger": t.journal_id.name,
+                "date": fmt_date(t.date),
                 "received": t.amount if t.payment_type == 'inbound' else 0,
                 "paid": t.amount if t.payment_type == 'outbound' else 0,
                 "state": t.state
@@ -174,12 +188,16 @@ class DashboardData(models.AbstractModel):
         """
         Return one row per bank/cash journal with:
           opening        – balance BEFORE from_date (the "previous balance")
-          deposit        – credits posted during the period (money IN)
-          deposit_count  – number of credit lines during the period
-          withdraw       – debits  posted during the period (money OUT)
-          withdraw_count – number of debit lines during the period
+          deposit        – debits  posted during the period (money IN)
+          deposit_count  – number of debit  lines during the period
+          withdraw       – credits posted during the period (money OUT)
+          withdraw_count – number of credit lines during the period
           change         – deposit - withdraw  (the net movement, e.g. -1000)
           closing        – opening + change     (the "new balance")
+
+        Note: for bank/cash (asset) accounts, a DEBIT increases the balance
+        (money coming in / a deposit) and a CREDIT decreases it (money going
+        out / a withdrawal), so balance = debit - credit.
         """
         journals = self.env['account.journal'].search(
             [('type', 'in', ['bank', 'cash'])],
@@ -195,7 +213,7 @@ class DashboardData(models.AbstractModel):
             opening = 0.0
             if from_date:
                 self.env.cr.execute("""
-                    SELECT COALESCE(SUM(aml.credit - aml.debit), 0.0)
+                    SELECT COALESCE(SUM(aml.debit - aml.credit), 0.0)
                     FROM account_move_line aml
                     JOIN account_move am ON am.id = aml.move_id
                     WHERE aml.account_id = ANY(%s)
@@ -204,7 +222,7 @@ class DashboardData(models.AbstractModel):
                 """, ([account.id], from_date))
                 opening = float(self.env.cr.fetchone()[0] or 0.0)
 
-            # ── Period deposit (credit) & withdraw (debit) + counts ──────────
+            # ── Period deposit (debit) & withdraw (credit) + counts ──────────
             date_parts = []
             params = [account.id]
             if from_date:
@@ -217,10 +235,10 @@ class DashboardData(models.AbstractModel):
 
             self.env.cr.execute("""
                 SELECT
-                    COALESCE(SUM(aml.credit), 0.0)         AS deposit,
-                    COALESCE(SUM(aml.debit),  0.0)         AS withdraw,
-                    COUNT(*) FILTER (WHERE aml.credit > 0) AS deposit_count,
-                    COUNT(*) FILTER (WHERE aml.debit  > 0) AS withdraw_count
+                    COALESCE(SUM(aml.debit),  0.0)         AS deposit,
+                    COALESCE(SUM(aml.credit), 0.0)         AS withdraw,
+                    COUNT(*) FILTER (WHERE aml.debit  > 0) AS deposit_count,
+                    COUNT(*) FILTER (WHERE aml.credit > 0) AS withdraw_count
                 FROM account_move_line aml
                 JOIN account_move am ON am.id = aml.move_id
                 WHERE aml.account_id = %%s

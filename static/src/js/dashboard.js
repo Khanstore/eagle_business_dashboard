@@ -212,6 +212,13 @@ class Dashboard extends Component {
         return this.filteredTransactions.reduce((s, r) => s + (parseFloat(r.paid) || 0), 0).toFixed(2);
     }
 
+    // ── Show the Date column only when the selected range spans more than
+    //    a single day (e.g. hidden for "Today", shown for week/month/year/all/custom) ──
+    get showDateColumn() {
+        const { from_date, to_date } = this.state;
+        return !(from_date && to_date && from_date === to_date);
+    }
+
     // ── Print modal ───────────────────────────────────────────
     openPrintModal()  { this.state.showPrintModal = true; }
     closePrintModal() { this.state.showPrintModal = false; }
@@ -253,16 +260,17 @@ class Dashboard extends Component {
             const extraHeader = extraCol ? `<th>${extraCol.label}</th>` : '';
             let html = `<table class="detail-table">
                 <thead><tr>
-                    <th>Reference</th><th>Partner</th><th>Status</th>${extraHeader}<th style="text-align:right">Amount</th>
+                    <th>Reference</th><th>Partner</th><th>Date</th><th>Status</th>${extraHeader}<th style="text-align:right">Amount</th>
                 </tr></thead>
                 <tbody>`;
 
             for (const r of records) {
                 const extraCell = extraCol ? `<td>${r[extraCol.field] || ''}</td>` : '';
-                const colCount  = extraCol ? 5 : 4;
+                const colCount  = extraCol ? 6 : 5;
                 html += `<tr class="move-header">
                     <td>${r.name || ''}</td>
                     <td>${r.partner || ''}</td>
+                    <td>${r.date || ''}</td>
                     <td>${r.status || ''}</td>
                     ${extraCell}
                     <td style="text-align:right">${fmt(r.amount)}</td>
@@ -301,6 +309,7 @@ class Dashboard extends Component {
             const trs = rows.map(r => `<tr>
                 <td>${r.name || ''}</td>
                 <td>${r.partner || ''}</td>
+                <td>${r.date || ''}</td>
                 <td>${r.ledger || ''}</td>
                 <td style="text-align:right;color:#0d6efd">${fmt(r.received)}</td>
                 <td style="text-align:right;color:#dc3545">${fmt(r.paid)}</td>
@@ -308,7 +317,7 @@ class Dashboard extends Component {
             </tr>`).join('');
             return `<table class="detail-table">
                 <thead><tr>
-                    <th>Name</th><th>Partner</th><th>Ledger</th>
+                    <th>Name</th><th>Partner</th><th>Date</th><th>Ledger</th>
                     <th style="text-align:right">Received</th><th style="text-align:right">Paid</th><th>Status</th>
                 </tr></thead>
                 <tbody>${trs}</tbody>
