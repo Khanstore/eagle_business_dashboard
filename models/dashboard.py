@@ -192,12 +192,16 @@ class DashboardData(models.AbstractModel):
           deposit_count  – number of debit  lines during the period
           withdraw       – credits posted during the period (money OUT)
           withdraw_count – number of credit lines during the period
-          change         – deposit - withdraw  (the net movement, e.g. -1000)
-          closing        – opening + change     (the "new balance")
+          change         – deposit - withdraw  (the net movement)
+          closing        – opening + change    (the "new balance")
 
-        Note: for bank/cash (asset) accounts, a DEBIT increases the balance
-        (money coming in / a deposit) and a CREDIT decreases it (money going
-        out / a withdrawal), so balance = debit - credit.
+        We filter by am.date (account_move.date, the journal entry header date)
+        rather than aml.date (account_move_line.date) because Odoo 17/18
+        updates the move header date when account.payment.date is changed on a
+        posted payment, but the individual line dates may lag until the move is
+        recomputed.  Using am.date ensures that a payment whose date has been
+        corrected moves correctly between the opening-balance window and the
+        period window without requiring a draft-reset cycle.
         """
         journals = self.env['account.journal'].search(
             [('type', 'in', ['bank', 'cash'])],
@@ -209,7 +213,7 @@ class DashboardData(models.AbstractModel):
             if not account:
                 continue
 
-            # ── Opening / previous balance (all posted lines BEFORE from_date) ──
+            # ── Opening / previous balance (posted moves whose date < from_date) ──
             opening = 0.0
             if from_date:
                 self.env.cr.execute("""
@@ -218,7 +222,7 @@ class DashboardData(models.AbstractModel):
                     JOIN account_move am ON am.id = aml.move_id
                     WHERE aml.account_id = ANY(%s)
                       AND am.state = 'posted'
-                      AND aml.date < %s
+                      AND am.date < %s
                 """, ([account.id], from_date))
                 opening = float(self.env.cr.fetchone()[0] or 0.0)
 
@@ -226,10 +230,10 @@ class DashboardData(models.AbstractModel):
             date_parts = []
             params = [account.id]
             if from_date:
-                date_parts.append("aml.date >= %s")
+                date_parts.append("am.date >= %s")
                 params.append(from_date)
             if to_date:
-                date_parts.append("aml.date <= %s")
+                date_parts.append("am.date <= %s")
                 params.append(to_date)
             date_clause = ("AND " + " AND ".join(date_parts)) if date_parts else ""
 
