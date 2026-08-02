@@ -1,372 +1,474 @@
 <templates xml:space="preserve">
 <t t-name="advanced_business_dashboard.dashboard">
-<div class="container-fluid" style="max-height: 90vh; overflow-y: auto;">
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-    <h2 class="mb-0">Dashboard</h2>
-    <button class="btn btn-sm btn-outline-dark" t-on-click="openPrintModal">
-        <i class="fa fa-print me-1"/> Print
-    </button>
-</div>
+<div class="eagle-app" style="height:100%;display:flex;flex-direction:column;">
 
-    <!-- ── Print Modal ── -->
+  <!-- ══════════ HEADER ══════════ -->
+  <div class="eagle-header">
+    <div class="eagle-brand">
+      <div class="eagle-brand-icon"><i class="fa fa-store" style="color:#fff"/></div>
+      Khan Store
+    </div>
+    <div class="eagle-nav">
+      <button class="eagle-nav-btn active">Business</button>
+      <button class="eagle-nav-btn" t-on-click="goToFinanceDashboard">Finance</button>
+    </div>
+    <div class="eagle-header-actions">
+      <t t-if="state.autoRefresh">
+        <span class="eagle-auto-badge">
+          <span class="eagle-pulse"/>
+          Live
+        </span>
+      </t>
+      <select class="eagle-refresh-select" t-on-change="onRefreshMinsChange">
+        <option value="5">5 min</option>
+        <option value="10">10 min</option>
+        <option value="30">30 min</option>
+      </select>
+      <button t-on-click="toggleAutoRefresh"
+              t-attf-class="ebtn ebtn-sm #{state.autoRefresh ? 'ebtn-green' : 'ebtn-outline'}"
+              style="color:inherit;">
+        <i t-attf-class="fa #{state.autoRefresh ? 'fa-pause' : 'fa-refresh'}"/>
+        <t t-esc="state.autoRefresh ? 'Stop' : 'Auto-refresh'"/>
+      </button>
+      <button class="eagle-print-btn" t-on-click="openPrintModal">
+        <i class="fa fa-print"/> Print
+      </button>
+    </div>
+  </div>
+
+  <div class="eagle-body" style="flex:1;overflow-y:auto;padding:20px 24px 40px;">
+
+    <!-- ══════════ PRINT MODAL ══════════ -->
     <t t-if="state.showPrintModal">
-      <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.4);">
-        <div class="modal-dialog modal-dialog-centered" style="max-width:380px; width:90vw;">
-          <div class="modal-content">
-            <div class="modal-header py-2">
-              <h5 class="modal-title">Print Options</h5>
-              <button type="button" class="btn-close" t-on-click="closePrintModal"/>
+      <div class="eagle-modal-backdrop">
+        <div class="eagle-modal eagle-target-modal">
+          <div class="eagle-modal-header">
+            <h5 class="eagle-modal-title"><i class="fa fa-print me-2"/>Print Options</h5>
+            <button class="ebtn ebtn-ghost ebtn-icon" t-on-click="closePrintModal"><i class="fa fa-times"/></button>
+          </div>
+          <div class="eagle-modal-body"><div class="eagle-card-inner">
+            <p class="text-muted small mb-3">Choose what to include in the printed PDF.</p>
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="pOrd" t-model="state.printOrderLines"/>
+              <label class="form-check-label fw-semibold" for="pOrd">Order &amp; Quotation lines
+                <span class="d-block text-muted small fw-normal">Product, qty, rate per order</span>
+              </label>
             </div>
-            <div class="modal-body">
-              <p class="mb-3 text-muted small">Choose what to include in the printed PDF.</p>
-              <p class="small fw-semibold mb-2">What to include in the PDF:</p>
-
-              <div class="form-check form-switch mb-3">
-                <input class="form-check-input" type="checkbox" id="printOrderLines"
-                       t-model="state.printOrderLines"/>
-                <label class="form-check-label" for="printOrderLines">
-                  <strong>Order lines</strong>
-                  <span class="d-block text-muted small">Show product, qty, rate under each order/quotation</span>
-                </label>
-              </div>
-
-              <div class="form-check form-switch mb-3">
-                <input class="form-check-input" type="checkbox" id="printPurchaseLines"
-                       t-model="state.printPurchaseLines"/>
-                <label class="form-check-label" for="printPurchaseLines">
-                  <strong>Purchase lines</strong>
-                  <span class="d-block text-muted small">Show product, qty, rate under each purchase/RFQ</span>
-                </label>
-              </div>
-
-              <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="printTxDetails"
-                       t-model="state.printTxDetails"/>
-                <label class="form-check-label" for="printTxDetails">
-                  <strong>Transaction detail rows</strong>
-                  <span class="d-block text-muted small">Show the full transaction list</span>
-                </label>
-              </div>
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="pPur" t-model="state.printPurchaseLines"/>
+              <label class="form-check-label fw-semibold" for="pPur">Purchase &amp; RFQ lines
+                <span class="d-block text-muted small fw-normal">Product, qty, rate per purchase</span>
+              </label>
             </div>
-            <div class="modal-footer py-2">
-              <button class="btn btn-secondary btn-sm" t-on-click="closePrintModal">Cancel</button>
-              <button class="btn btn-dark btn-sm" t-on-click="doPrint">
-                <i class="fa fa-print me-1"/> Print PDF
-              </button>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="pTx" t-model="state.printTxDetails"/>
+              <label class="form-check-label fw-semibold" for="pTx">Transaction rows
+                <span class="d-block text-muted small fw-normal">Full transaction list</span>
+              </label>
             </div>
+          </div></div>
+          <div class="eagle-modal-footer">
+            <button class="ebtn ebtn-outline" t-on-click="closePrintModal">Cancel</button>
+            <button class="ebtn ebtn-primary" t-on-click="doPrint"><i class="fa fa-print me-1"/>Print PDF</button>
           </div>
         </div>
       </div>
     </t>
 
-    <!-- ── Filter Bar ── -->
-    <div class="card mb-3 p-3 bg-light">
-
-        <!-- Row 1: Preset buttons -->
-        <div class="mb-2 d-flex flex-wrap gap-2">
-            <button t-on-click="() => this.applyPreset('today')"
-                    t-attf-class="btn btn-sm #{state.active_preset == 'today' ? 'btn-primary' : 'btn-outline-secondary'}">
-                Today
+    <!-- ══════════ EXPORT PROMPT MODAL ══════════ -->
+    <t t-if="state.showExportPrompt">
+      <div class="eagle-modal-backdrop">
+        <div class="eagle-modal eagle-target-modal">
+          <div class="eagle-modal-header">
+            <h5 class="eagle-modal-title"><i class="fa fa-download me-2"/>Export to CSV</h5>
+            <button class="ebtn ebtn-ghost ebtn-icon" t-on-click="closeExportPrompt"><i class="fa fa-times"/></button>
+          </div>
+          <div class="eagle-modal-body"><div class="eagle-card-inner">
+            <p class="mb-2">Do you want to include <strong>line item details</strong> in the export?</p>
+            <p class="text-muted small mb-0">
+              <strong>Yes</strong> — each record is followed by its product lines (Row Type: RECORD / LINE).<br/>
+              <strong>No</strong> — export summary rows only (one row per record).
+            </p>
+          </div></div>
+          <div class="eagle-modal-footer">
+            <button class="ebtn ebtn-outline" t-on-click="closeExportPrompt">Cancel</button>
+            <button class="ebtn ebtn-outline" t-on-click="()=>this.doExport(false)">
+              <i class="fa fa-download me-1"/>No — Summary only
             </button>
-            <button t-on-click="() => this.applyPreset('this_week')"
-                    t-attf-class="btn btn-sm #{state.active_preset == 'this_week' ? 'btn-primary' : 'btn-outline-secondary'}">
-                This Week
+            <button class="ebtn ebtn-primary" t-on-click="()=>this.doExport(true)">
+              <i class="fa fa-list me-1"/>Yes — Include lines
             </button>
-            <button t-on-click="() => this.applyPreset('this_month')"
-                    t-attf-class="btn btn-sm #{state.active_preset == 'this_month' ? 'btn-primary' : 'btn-outline-secondary'}">
-                This Month
-            </button>
-            <button t-on-click="() => this.applyPreset('this_year')"
-                    t-attf-class="btn btn-sm #{state.active_preset == 'this_year' ? 'btn-primary' : 'btn-outline-secondary'}">
-                This Year
-            </button>
-            <button t-on-click="() => this.applyPreset('all')"
-                    t-attf-class="btn btn-sm #{state.active_preset == 'all' ? 'btn-primary' : 'btn-outline-secondary'}">
-                All Time
-            </button>
+          </div>
         </div>
+      </div>
+    </t>
 
-        <!-- Row 2: Month picker | Year picker | Custom range | Partner -->
-        <div class="row g-2 align-items-end">
-
-            <div class="col-6 col-md-auto">
-                <label class="form-label mb-1 small text-muted">Month</label>
-                <select class="form-select form-select-sm" t-on-change="onMonthChange">
-                    <t t-foreach="monthOptions" t-as="mo" t-key="mo.value">
-                        <option t-att-value="mo.value"
-                                t-att-selected="state.selected_month == mo.value">
-                            <t t-esc="mo.label"/>
-                        </option>
-                    </t>
-                </select>
+    <!-- ══════════ SALES TARGET MODAL ══════════ -->
+    <t t-if="state.showTargetModal">
+      <div class="eagle-modal-backdrop">
+        <div class="eagle-modal eagle-target-modal">
+          <div class="eagle-modal-header">
+            <h5 class="eagle-modal-title"><i class="fa fa-bullseye me-2"/>Set Monthly Sales Target</h5>
+            <button class="ebtn ebtn-ghost ebtn-icon" t-on-click="closeTargetModal"><i class="fa fa-times"/></button>
+          </div>
+          <div class="eagle-modal-body"><div class="eagle-card-inner">
+            <p class="text-muted small mb-3">Enter the total sales amount you aim to achieve this month.</p>
+            <div class="input-group">
+              <span class="input-group-text fw-bold">BDT</span>
+              <input type="number" class="form-control" placeholder="e.g. 500000"
+                     t-model="state.targetInput"/>
             </div>
-
-            <div class="col-6 col-md-auto">
-                <label class="form-label mb-1 small text-muted">Year</label>
-                <select class="form-select form-select-sm" t-on-change="onYearChange">
-                    <t t-foreach="yearOptions" t-as="yr" t-key="yr">
-                        <option t-att-value="yr"
-                                t-att-selected="state.selected_year == yr.toString()">
-                            <t t-esc="yr"/>
-                        </option>
-                    </t>
-                </select>
-            </div>
-
-            <div class="col-6 col-md-auto">
-                <label class="form-label mb-1 small text-muted">From</label>
-                <input type="date" class="form-control form-control-sm"
-                       t-model="state.from_date"
-                       t-on-change="onDateChange"/>
-            </div>
-
-            <div class="col-6 col-md-auto">
-                <label class="form-label mb-1 small text-muted">To</label>
-                <input type="date" class="form-control form-control-sm"
-                       t-model="state.to_date"
-                       t-on-change="onDateChange"/>
-            </div>
-
-            <div class="col-12 col-md">
-                <label class="form-label mb-1 small text-muted">Partner</label>
-                <input type="text" class="form-control form-control-sm"
-                       placeholder="Search partner..."
-                       t-model="state.partner_filter"/>
-            </div>
-
+          </div></div>
+          <div class="eagle-modal-footer">
+            <button class="ebtn ebtn-outline" t-on-click="closeTargetModal">Cancel</button>
+            <button class="ebtn ebtn-primary" t-on-click="saveTarget"><i class="fa fa-save me-1"/>Save Target</button>
+          </div>
         </div>
-    </div>
+      </div>
+    </t>
 
-    <div class="row g-3">
-<div class="col-12 col-md-6">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
-    <h3 class="mb-0">Orders</h3>
-    <button class="btn btn-sm btn-primary" t-on-click="createOrder">
-      <i class="fa fa-plus me-1"/> New Order
-    </button>
-  </div>
-  <div class="table-responsive">
-  <table class="table table-bordered table-sm">
-    <thead class="table-light">
-      <tr>
-        <th>Order</th>
-        <th>Partner</th>
-        <th t-if="showDateColumn">Date</th>
-        <th>Status</th>
-        <th>Invoice Status</th>
-        <th>Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      <t t-foreach="filteredOrders" t-as="o" t-key="o.id">
-        <tr>
-          <td>
-            <a href="#" t-on-click.prevent="() => this.openOrder(o.id)">
-              <t t-esc="o.name"/>
-            </a>
-          </td>
-          <td>
-            <a href="#" t-on-click.prevent="() => this.openPartner(o.partner_id)">
-              <t t-esc="o.partner"/>
-            </a>
-          </td>
-          <td t-if="showDateColumn"><t t-esc="o.date"/></td>
-          <td><t t-esc="o.status"/></td>
-          <td>
-            <span t-attf-class="badge #{o.invoice_status == 'invoiced' ? 'bg-success' : o.invoice_status == 'to invoice' ? 'bg-warning text-dark' : o.invoice_status == 'upselling' ? 'bg-info' : 'bg-secondary'}">
-              <t t-esc="o.invoice_status"/>
-            </span>
-          </td>
-          <td><t t-esc="o.amount"/></td>
-        </tr>
-      </t>
-    </tbody>
-  </table>
-  </div>
-</div>
-
-        <div class="col-12 col-md-6">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
-    <h3 class="mb-0">Purchase</h3>
-    <button class="btn btn-sm btn-success" t-on-click="createPurchase">
-      <i class="fa fa-plus me-1"/> New Purchase
-    </button>
-  </div>
-  <div class="table-responsive">
-  <table class="table table-bordered table-sm">
-    <thead class="table-light">
-      <tr>
-        <th>Order</th>
-        <th>Partner</th>
-        <th t-if="showDateColumn">Date</th>
-        <th>Status</th>
-        <th>Billing Status</th>
-        <th>Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      <t t-foreach="filteredPurchases" t-as="p" t-key="p.id">
-        <tr>
-          <td>
-            <a href="#" t-on-click.prevent="() => this.openPurchase(p.id)">
-              <t t-esc="p.name"/>
-            </a>
-          </td>
-          <td>
-            <a href="#" t-on-click.prevent="() => this.openPartner(p.partner_id)">
-              <t t-esc="p.partner"/>
-            </a>
-          </td>
-          <td t-if="showDateColumn"><t t-esc="p.date"/></td>
-          <td><t t-esc="p.status"/></td>
-          <td>
-            <span t-attf-class="badge #{p.billing_status == 'invoiced' ? 'bg-success' : p.billing_status == 'to invoice' ? 'bg-warning text-dark' : 'bg-secondary'}">
-              <t t-esc="p.billing_status"/>
-            </span>
-          </td>
-          <td><t t-esc="p.amount"/></td>
-        </tr>
-      </t>
-    </tbody>
-  </table>
-  </div>
-</div>
-</div>
-
-    <div class="row g-3 mt-1">
-<div class="col-12 col-md-6">
-<h3>Quotations</h3>
-  <div class="table-responsive">
-    <table class="table table-bordered table-sm">
-<tr>
-    <th>Quotation</th>
-    <th>Partner</th>
-    <th t-if="showDateColumn">Date</th>
-    <th>Status</th>
-    <th>Amount</th></tr>
-        <t t-foreach="filteredQuotations" t-as="q" t-key="q.id">
-<tr>
-<td>
-    <a href="#"
-       t-on-click.prevent="() => this.openOrder(q.id)">
-        <t t-esc="q.name"/>
-    </a>
-</td>
-    <td><a href="#"
-       t-on-click.prevent="() => this.openPartner(q.partner_id)">
-        <t t-esc="q.partner"/>
-    </a></td>
-    <td t-if="showDateColumn"><t t-esc="q.date"/></td>
-    <td><t t-esc="q.status"/></td>
-    <td><t t-esc="q.amount"/></td>
-</tr>
-</t>
-</table>
-  </div>
-</div>
-
-        <div class="col-12 col-md-6">
-<h3>RFQ</h3>
-  <div class="table-responsive">
-            <table class="table table-bordered table-sm">
-<tr><th>Order</th>
-    <th>Partner</th>
-    <th t-if="showDateColumn">Date</th>
-    <th>Status</th>
-    <th>Amount</th></tr>
-                <t t-foreach="filteredRfq" t-as="p" t-key="p.id">
-<tr>
-<td>
-    <a href="#"
-       t-on-click.prevent="() => this.openPurchase(p.id)">
-        <t t-esc="p.name"/>
-    </a>
-</td>
-    <td><a href="#"
-       t-on-click.prevent="() => this.openPartner(p.partner_id)">
-        <t t-esc="p.partner"/>
-    </a></td>
-    <td t-if="showDateColumn"><t t-esc="p.date"/></td>
-    <td><t t-esc="p.status"/></td>
-    <td><t t-esc="p.amount"/></td>
-</tr>
-</t>
-</table>
-  </div>
-</div>
-</div>
-
-    <!-- ── Transactions ── -->
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3 mb-1">
-      <h3 class="mb-0">Transactions</h3>
-      <div class="d-flex gap-2">
-        <button class="btn btn-sm text-white" style="background-color:#0d6efd;"
-                t-on-click="() => this.createPayment('inbound')">
-          <i class="fa fa-arrow-down me-1"/> New Receive
-        </button>
-        <button class="btn btn-sm text-white" style="background-color:#dc3545;"
-                t-on-click="() => this.createPayment('outbound')">
-          <i class="fa fa-arrow-up me-1"/> New Payment
-        </button>
+    <!-- ══════════ KPI CARDS ══════════ -->
+    <div class="eagle-kpi-grid">
+      <!-- Overdue invoices -->
+      <div class="eagle-kpi-card kpi-red clickable" t-on-click="openOverdueInvoices" title="Click to view overdue invoices">
+        <div class="eagle-kpi-icon"><i class="fa fa-exclamation-circle"/></div>
+        <div>
+          <div class="eagle-kpi-val"><t t-esc="state.overdue_count"/></div>
+          <div class="eagle-kpi-lbl">Overdue Invoices <i class="fa fa-external-link" style="font-size:10px"/></div>
+          <div class="eagle-kpi-sub">BDT <t t-esc="state.overdue_amount.toFixed(2)"/></div>
+        </div>
+      </div>
+      <!-- Due soon -->
+      <div class="eagle-kpi-card kpi-amber clickable" t-on-click="openDueSoonInvoices" title="Click to view invoices due in 7 days">
+        <div class="eagle-kpi-icon"><i class="fa fa-clock-o"/></div>
+        <div>
+          <div class="eagle-kpi-val"><t t-esc="state.due_soon_count"/></div>
+          <div class="eagle-kpi-lbl">Due in 7 Days <i class="fa fa-external-link" style="font-size:10px"/></div>
+          <div class="eagle-kpi-sub">BDT <t t-esc="state.due_soon_amount.toFixed(2)"/></div>
+        </div>
+      </div>
+      <!-- Month sales -->
+      <div class="eagle-kpi-card kpi-blue clickable" t-on-click="openMonthSales" title="Click to view this month's orders">
+        <div class="eagle-kpi-icon"><i class="fa fa-shopping-cart"/></div>
+        <div>
+          <div class="eagle-kpi-val" style="font-size:1.2rem"><t t-esc="state.month_sales.toFixed(0)"/></div>
+          <div class="eagle-kpi-lbl">Month Sales <i class="fa fa-external-link" style="font-size:10px"/></div>
+          <div class="eagle-kpi-sub">BDT this month</div>
+        </div>
+      </div>
+      <!-- Sales target -->
+      <div class="eagle-kpi-card kpi-purple" style="cursor:pointer" t-on-click="openTargetModal">
+        <div class="eagle-kpi-icon"><i class="fa fa-bullseye"/></div>
+        <div style="flex:1">
+          <div class="eagle-kpi-val"><t t-esc="targetPct"/>%</div>
+          <div class="eagle-kpi-lbl">Monthly Target <i class="fa fa-pencil ms-1" style="font-size:10px"/></div>
+          <div class="eagle-progress-wrap">
+            <div class="eagle-progress">
+              <div class="eagle-progress-bar" t-att-style="'width:'+targetPct+'%'"/>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="table-responsive">
-<table class="table table-bordered table-sm">
-    <thead>
-        <tr>
-            <th t-on-click="() => this.sortTransactions('name')" style="cursor: pointer;">
-                Name <i t-attf-class="fa #{state.sortKey == 'name' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
-            </th>
-            <th t-if="showDateColumn" t-on-click="() => this.sortTransactions('date')" style="cursor: pointer;">
-                Date <i t-attf-class="fa #{state.sortKey == 'date' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
-            </th>
-            <th t-on-click="() => this.sortTransactions('partner')" style="cursor: pointer;">
-                Partner <i t-attf-class="fa #{state.sortKey == 'partner' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
-            </th>
-            <th t-on-click="() => this.sortTransactions('ledger')" style="cursor: pointer;">
-                Ledger <i t-attf-class="fa #{state.sortKey == 'ledger' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
-            </th>
-            <th t-on-click="() => this.sortTransactions('received')" style="cursor: pointer;">
-                Received <i t-attf-class="fa #{state.sortKey == 'received' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
-            </th>
-            <th t-on-click="() => this.sortTransactions('paid')" style="cursor: pointer;">
-                Paid <i t-attf-class="fa #{state.sortKey == 'paid' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
-            </th>
-            <th t-on-click="() => this.sortTransactions('state')" style="cursor: pointer;">
-                Status <i t-attf-class="fa #{state.sortKey == 'state' ? (state.sortOrder == 'asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'}"/>
-            </th>
-        </tr>
-    </thead>
-    <tbody>
-        <t t-foreach="filteredTransactions" t-as="t" t-key="t.id">
-            <tr>
-                <td>
-                    <a href="#" t-on-click.prevent="() => this.openTransaction(t.id)">
-                        <t t-esc="t.name"/>
-                    </a>
-                </td>
-                <td t-if="showDateColumn"><t t-esc="t.date"/></td>
-                <td><a href="#"
-                   t-on-click.prevent="() => this.openPartner(t.partner_id)">
-                    <t t-esc="t.partner"/>
-                </a></td>
-                <td><t t-esc="t.ledger"/></td>
-                <td class="font-monospace" style="color:#0d6efd;"><t t-esc="t.received"/></td>
-                <td class="font-monospace" style="color:#dc3545;"><t t-esc="t.paid"/></td>
-                <td><t t-esc="t.state"/></td>
-            </tr>
-        </t>
-    </tbody>
-    <tfoot class="table-secondary fw-bold">
-        <tr>
-            <td t-att-colspan="showDateColumn ? 4 : 3">Total (<t t-esc="filteredTransactions.length"/> records)</td>
-            <td class="font-monospace" style="color:#0d6efd;"><t t-esc="txTotalReceived"/></td>
-            <td class="font-monospace" style="color:#dc3545;"><t t-esc="txTotalPaid"/></td>
-            <td/>
-        </tr>
-    </tfoot>
-</table>
+
+    <!-- ══════════ ALERTS ══════════ -->
+    <t t-if="state.low_stock.length > 0">
+      <div class="eagle-alert eagle-alert-warn">
+        <i class="fa fa-warning fa-lg"/>
+        <strong>Low Stock:</strong>
+        <div class="eagle-stock-list">
+          <t t-foreach="state.low_stock" t-as="s" t-key="s.name">
+            <span class="eagle-stock-chip">
+              <i class="fa fa-cube" style="color:#c2410c"/>
+              <t t-esc="s.name"/>
+              <span class="eagle-stock-qty"><t t-esc="s.qty"/> <t t-esc="s.uom"/></span>
+            </span>
+          </t>
+        </div>
+      </div>
+    </t>
+
+    <!-- ══════════ FILTER BAR ══════════ -->
+    <div class="eagle-filter">
+      <div class="eagle-preset-bar">
+        <button t-on-click="()=>this.applyPreset('today')"      t-attf-class="eagle-preset-btn #{state.active_preset=='today'?'active':''}">Today</button>
+        <button t-on-click="()=>this.applyPreset('this_week')"  t-attf-class="eagle-preset-btn #{state.active_preset=='this_week'?'active':''}">This Week</button>
+        <button t-on-click="()=>this.applyPreset('this_month')" t-attf-class="eagle-preset-btn #{state.active_preset=='this_month'?'active':''}">This Month</button>
+        <button t-on-click="()=>this.applyPreset('this_year')"  t-attf-class="eagle-preset-btn #{state.active_preset=='this_year'?'active':''}">This Year</button>
+        <button t-on-click="()=>this.applyPreset('all')"        t-attf-class="eagle-preset-btn #{state.active_preset=='all'?'active':''}">All Time</button>
+      </div>
+      <div class="row g-2 align-items-end">
+        <div class="col-6 col-md-auto">
+          <label class="form-label mb-1 small text-muted">Month</label>
+          <select class="form-select form-select-sm" t-on-change="onMonthChange">
+            <t t-foreach="monthOptions" t-as="mo" t-key="mo.value">
+              <option t-att-value="mo.value" t-att-selected="state.selected_month==mo.value"><t t-esc="mo.label"/></option>
+            </t>
+          </select>
+        </div>
+        <div class="col-6 col-md-auto">
+          <label class="form-label mb-1 small text-muted">Year</label>
+          <select class="form-select form-select-sm" t-on-change="onYearChange">
+            <t t-foreach="yearOptions" t-as="yr" t-key="yr">
+              <option t-att-value="yr" t-att-selected="state.selected_year==yr.toString()"><t t-esc="yr"/></option>
+            </t>
+          </select>
+        </div>
+        <div class="col-6 col-md-auto">
+          <label class="form-label mb-1 small text-muted">From</label>
+          <input type="date" class="form-control form-control-sm" t-model="state.from_date" t-on-change="onDateChange"/>
+        </div>
+        <div class="col-6 col-md-auto">
+          <label class="form-label mb-1 small text-muted">To</label>
+          <input type="date" class="form-control form-control-sm" t-model="state.to_date" t-on-change="onDateChange"/>
+        </div>
+        <div class="col-12 col-md">
+          <label class="form-label mb-1 small text-muted">Partner Name</label>
+          <input type="text" class="form-control form-control-sm" placeholder="Search by name..." t-model="state.partner_filter"/>
+        </div>
+        <div class="col-12 col-md-auto">
+          <label class="form-label mb-1 small text-muted">Partner ID</label>
+          <div class="input-group input-group-sm">
+            <select class="form-select form-select-sm" style="min-width:150px"
+                    t-on-change="(ev)=>{ this.state.partner_id_filter=ev.target.value; }">
+              <option value="">— All Partners —</option>
+              <t t-foreach="state.partnerOptions" t-as="p" t-key="p.id">
+                <option t-att-value="p.id" t-att-selected="state.partner_id_filter===p.id">
+                  <t t-esc="p.name"/> (#<t t-esc="p.id"/>)
+                </option>
+              </t>
+            </select>
+            <t t-if="state.partner_id_filter">
+              <button class="btn btn-outline-secondary btn-sm" t-on-click="()=>{this.state.partner_id_filter='';}">&#x2715;</button>
+            </t>
+          </div>
+        </div>
+      </div>
     </div>
-</div>
+
+    <!-- ══════════ MAIN CONTENT GRID ══════════ -->
+    <div class="eagle-two-col">
+
+      <!-- ── Orders ── -->
+      <div class="eagle-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-file-text-o"/>Orders <span class="ebadge ebadge-blue ms-1"><t t-esc="filteredOrders.length"/></span></h4>
+          <div class="d-flex gap-2">
+            <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportOrders" title="Export CSV"><i class="fa fa-download"/></button>
+            <button class="ebtn ebtn-sm ebtn-primary" t-on-click="createOrder"><i class="fa fa-plus"/> New</button>
+          </div>
+        </div>
+        <div class="eagle-table-wrap">
+          <table class="eagle-table">
+            <thead><tr>
+              <th>Order</th><th>Partner</th>
+              <th t-if="showDateColumn">Date</th>
+              <th>Status</th><th>Invoice</th><th class="text-end">Amount</th>
+            </tr></thead>
+            <tbody>
+              <t t-foreach="filteredOrders" t-as="o" t-key="o.id">
+                <tr>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openOrder(o.id)"><t t-esc="o.name"/></a></td>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(o.partner_id)"><t t-esc="o.partner"/></a></td>
+                  <td t-if="showDateColumn"><t t-esc="o.date"/></td>
+                  <td><span class="ebadge ebadge-green"><t t-esc="o.status"/></span></td>
+                  <td>
+                    <span t-attf-class="ebadge #{o.invoice_status=='invoiced'?'ebadge-green':o.invoice_status=='to invoice'?'ebadge-yellow':'ebadge-gray'}">
+                      <t t-esc="o.invoice_status"/>
+                    </span>
+                  </td>
+                  <td class="text-end money"><t t-esc="o.amount"/></td>
+                </tr>
+              </t>
+            </tbody>
+            <tfoot><tr>
+              <td t-att-colspan="showDateColumn?5:4">Total (<t t-esc="filteredOrders.length"/> records)</td>
+              <td class="text-end money fw-bold"><t t-esc="_sum(filteredOrders,'amount')"/></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Purchase ── -->
+      <div class="eagle-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-shopping-bag"/>Purchase <span class="ebadge ebadge-purple ms-1"><t t-esc="filteredPurchases.length"/></span></h4>
+          <div class="d-flex gap-2">
+            <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportPurchases" title="Export CSV"><i class="fa fa-download"/></button>
+            <button class="ebtn ebtn-sm ebtn-green" t-on-click="createPurchase"><i class="fa fa-plus"/> New</button>
+          </div>
+        </div>
+        <div class="eagle-table-wrap">
+          <table class="eagle-table">
+            <thead><tr>
+              <th>Order</th><th>Partner</th>
+              <th t-if="showDateColumn">Date</th>
+              <th>Status</th><th>Billing</th><th class="text-end">Amount</th>
+            </tr></thead>
+            <tbody>
+              <t t-foreach="filteredPurchases" t-as="p" t-key="p.id">
+                <tr>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openPurchase(p.id)"><t t-esc="p.name"/></a></td>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(p.partner_id)"><t t-esc="p.partner"/></a></td>
+                  <td t-if="showDateColumn"><t t-esc="p.date"/></td>
+                  <td><span class="ebadge ebadge-blue"><t t-esc="p.status"/></span></td>
+                  <td>
+                    <span t-attf-class="ebadge #{p.billing_status=='invoiced'?'ebadge-green':p.billing_status=='to invoice'?'ebadge-yellow':'ebadge-gray'}">
+                      <t t-esc="p.billing_status"/>
+                    </span>
+                  </td>
+                  <td class="text-end money"><t t-esc="p.amount"/></td>
+                </tr>
+              </t>
+            </tbody>
+            <tfoot><tr>
+              <td t-att-colspan="showDateColumn?5:4">Total (<t t-esc="filteredPurchases.length"/> records)</td>
+              <td class="text-end money fw-bold"><t t-esc="_sum(filteredPurchases,'amount')"/></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Quotations ── -->
+      <div class="eagle-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-file-o"/>Quotations <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredQuotations.length"/></span></h4>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportQuotes" title="Export CSV"><i class="fa fa-download"/></button>
+        </div>
+        <div class="eagle-table-wrap">
+          <table class="eagle-table">
+            <thead><tr>
+              <th>Quotation</th><th>Partner</th>
+              <th t-if="showDateColumn">Date</th>
+              <th>Status</th><th class="text-end">Amount</th>
+            </tr></thead>
+            <tbody>
+              <t t-foreach="filteredQuotations" t-as="q" t-key="q.id">
+                <tr>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openOrder(q.id)"><t t-esc="q.name"/></a></td>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(q.partner_id)"><t t-esc="q.partner"/></a></td>
+                  <td t-if="showDateColumn"><t t-esc="q.date"/></td>
+                  <td><span class="ebadge ebadge-gray"><t t-esc="q.status"/></span></td>
+                  <td class="text-end money"><t t-esc="q.amount"/></td>
+                </tr>
+              </t>
+            </tbody>
+            <tfoot><tr>
+              <td t-att-colspan="showDateColumn?4:3">Total (<t t-esc="filteredQuotations.length"/> records)</td>
+              <td class="text-end money fw-bold"><t t-esc="_sum(filteredQuotations,'amount')"/></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── RFQ ── -->
+      <div class="eagle-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-envelope-o"/>RFQ <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredRfq.length"/></span></h4>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportRfq" title="Export CSV"><i class="fa fa-download"/></button>
+        </div>
+        <div class="eagle-table-wrap">
+          <table class="eagle-table">
+            <thead><tr>
+              <th>Order</th><th>Partner</th>
+              <th t-if="showDateColumn">Date</th>
+              <th>Status</th><th class="text-end">Amount</th>
+            </tr></thead>
+            <tbody>
+              <t t-foreach="filteredRfq" t-as="r" t-key="r.id">
+                <tr>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openPurchase(r.id)"><t t-esc="r.name"/></a></td>
+                  <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(r.partner_id)"><t t-esc="r.partner"/></a></td>
+                  <td t-if="showDateColumn"><t t-esc="r.date"/></td>
+                  <td><span class="ebadge ebadge-gray"><t t-esc="r.status"/></span></td>
+                  <td class="text-end money"><t t-esc="r.amount"/></td>
+                </tr>
+              </t>
+            </tbody>
+            <tfoot><tr>
+              <td t-att-colspan="showDateColumn?4:3">Total (<t t-esc="filteredRfq.length"/> records)</td>
+              <td class="text-end money fw-bold"><t t-esc="_sum(filteredRfq,'amount')"/></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- end two-col -->
+
+    <!-- ══════════ TOP CUSTOMERS ══════════ -->
+    <div class="eagle-card">
+      <div class="eagle-card-header">
+        <h4 class="eagle-card-title"><i class="fa fa-trophy" style="color:#f59e0b"/>Top 5 Customers by Revenue</h4>
+      </div>
+      <div class="eagle-card-inner">
+        <t t-if="state.top_customers.length === 0">
+          <p class="text-muted small text-center py-3">No data available.</p>
+        </t>
+        <t t-if="state.top_customers.length > 0">
+          <t t-set="maxVal" t-value="state.top_customers[0].total"/>
+          <t t-foreach="state.top_customers" t-as="c" t-key="c.name">
+            <div class="eagle-bar-row">
+              <div class="eagle-bar-name" t-att-title="c.name"><t t-esc="c.name"/></div>
+              <div class="eagle-bar-track">
+                <div class="eagle-bar-fill" t-att-style="'width:'+Math.round((c.total/maxVal)*100)+'%'">
+                  <t t-esc="c.total.toFixed(0)"/>
+                </div>
+              </div>
+            </div>
+          </t>
+        </t>
+      </div>
+    </div>
+
+    <!-- ══════════ TRANSACTIONS ══════════ -->
+    <div class="eagle-card">
+      <div class="eagle-card-header">
+        <h4 class="eagle-card-title"><i class="fa fa-exchange"/>Transactions <span class="ebadge ebadge-blue ms-1"><t t-esc="filteredTransactions.length"/></span></h4>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportTx" title="Export CSV"><i class="fa fa-download"/></button>
+          <button class="ebtn ebtn-sm ebtn-blue" t-on-click="()=>this.createPayment('inbound')">
+            <i class="fa fa-arrow-down"/> Receive
+          </button>
+          <button class="ebtn ebtn-sm ebtn-red" t-on-click="()=>this.createPayment('outbound')">
+            <i class="fa fa-arrow-up"/> Payment
+          </button>
+        </div>
+      </div>
+      <div class="eagle-table-wrap">
+        <table class="eagle-table">
+          <thead><tr>
+            <th class="sortable" t-on-click="()=>this.sortTransactions('name')">Reference <i t-attf-class="fa #{state.sortKey=='name'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th t-if="showDateColumn" class="sortable" t-on-click="()=>this.sortTransactions('date')">Date <i t-attf-class="fa #{state.sortKey=='date'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th class="sortable" t-on-click="()=>this.sortTransactions('partner')">Partner <i t-attf-class="fa #{state.sortKey=='partner'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th class="sortable" t-on-click="()=>this.sortTransactions('ledger')">Ledger <i t-attf-class="fa #{state.sortKey=='ledger'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th class="sortable text-end" t-on-click="()=>this.sortTransactions('received')">Received <i t-attf-class="fa #{state.sortKey=='received'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th class="sortable text-end" t-on-click="()=>this.sortTransactions('paid')">Paid <i t-attf-class="fa #{state.sortKey=='paid'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th class="sortable" t-on-click="()=>this.sortTransactions('state')">Status <i t-attf-class="fa #{state.sortKey=='state'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+          </tr></thead>
+          <tbody>
+            <t t-foreach="filteredTransactions" t-as="tx" t-key="tx.id">
+              <tr>
+                <td><a class="link" href="#" t-on-click.prevent="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td>
+                <td t-if="showDateColumn"><t t-esc="tx.date"/></td>
+                <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(tx.partner_id)"><t t-esc="tx.partner"/></a></td>
+                <td><t t-esc="tx.ledger"/></td>
+                <td class="text-end money-in"><t t-esc="tx.received"/></td>
+                <td class="text-end money-out"><t t-esc="tx.paid"/></td>
+                <td><span t-attf-class="ebadge #{tx.state=='posted'?'ebadge-green':tx.state=='draft'?'ebadge-gray':'ebadge-yellow'}"><t t-esc="tx.state"/></span></td>
+              </tr>
+            </t>
+          </tbody>
+          <tfoot><tr>
+            <td t-att-colspan="showDateColumn?4:3">Total (<t t-esc="filteredTransactions.length"/> records)</td>
+            <td class="text-end money-in fw-bold"><t t-esc="txTotalReceived"/></td>
+            <td class="text-end money-out fw-bold"><t t-esc="txTotalPaid"/></td>
+            <td/>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- eagle-body -->
+</div><!-- eagle-app -->
 </t>
 </templates>
