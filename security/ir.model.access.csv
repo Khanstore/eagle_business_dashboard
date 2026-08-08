@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_dashboard_data_user,dashboard.data user,model_dashboard_data,base.group_user,1,0,0,0
+access_dashboard_saved_filter_user,dashboard.saved.filter user,model_dashboard_saved_filter,base.group_user,1,1,1,1
+access_dashboard_approval_config_user,dashboard.approval.config user,model_dashboard_approval_config,base.group_user,1,0,0,0
+access_dashboard_approval_config_admin,dashboard.approval.config admin,model_dashboard_approval_config,eagle_business_dashboard.group_dashboard_admin,1,1,1,0
+access_dashboard_snoozed_product_user,dashboard.snoozed.product user,model_dashboard_snoozed_product,base.group_user,1,1,1,1

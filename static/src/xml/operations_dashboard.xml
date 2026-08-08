@@ -1,0 +1,179 @@
+<templates xml:space="preserve">
+<t t-name="advanced_business_dashboard.operations_dashboard">
+<div t-attf-class="eagle-app #{state.darkMode ? 'dark' : ''}" style="height:100%;display:flex;flex-direction:column;">
+
+  <!-- ══ HEADER ══ -->
+  <div class="eagle-header">
+    <div class="eagle-brand">
+      <div class="eagle-brand-icon" style="overflow:hidden;">
+        <img t-if="state.companyId" t-attf-src="/web/image/res.company/#{state.companyId}/logo" alt="" style="width:100%;height:100%;object-fit:contain;"/>
+        <i t-if="!state.companyId" class="fa fa-truck" style="color:#fff"/>
+      </div>
+      <t t-esc="state.companyName || 'Operations Dashboard'"/>
+    </div>
+    <div class="eagle-nav">
+      <button class="eagle-nav-btn" t-on-click="goToBusinessDashboard">Business</button>
+      <button class="eagle-nav-btn" t-on-click="goToFinanceDashboard">Finance</button>
+      <button class="eagle-nav-btn active">Operations</button>
+    </div>
+    <div class="eagle-header-actions">
+      <button class="eagle-darkmode-btn" t-on-click="toggleDarkMode" title="Toggle dark mode">
+        <i t-attf-class="fa #{state.darkMode?'fa-sun-o':'fa-moon-o'}"/>
+      </button>
+    </div>
+  </div>
+
+  <div class="eagle-body" style="flex:1;overflow-y:auto;padding:20px 24px 40px;">
+
+    <!-- ══ KPI CARDS ══ -->
+    <div class="eagle-kpi-grid">
+      <div class="eagle-kpi-card kpi-blue clickable" t-on-click="openPendingDeliveries" title="View pending deliveries">
+        <div class="eagle-kpi-icon"><i class="fa fa-truck"/></div>
+        <div><div class="eagle-kpi-val"><t t-esc="state.pending_deliveries"/></div><div class="eagle-kpi-lbl">Pending Deliveries <i class="fa fa-external-link" style="font-size:10px"/></div></div>
+      </div>
+      <div class="eagle-kpi-card kpi-teal clickable" t-on-click="openPendingReceipts" title="View pending receipts">
+        <div class="eagle-kpi-icon"><i class="fa fa-inbox"/></div>
+        <div><div class="eagle-kpi-val"><t t-esc="state.pending_receipts"/></div><div class="eagle-kpi-lbl">Pending Receipts <i class="fa fa-external-link" style="font-size:10px"/></div></div>
+      </div>
+      <div class="eagle-kpi-card kpi-red clickable" t-on-click="openLateTransfers" title="View late transfers">
+        <div class="eagle-kpi-icon"><i class="fa fa-exclamation-triangle"/></div>
+        <div><div class="eagle-kpi-val"><t t-esc="state.late"/></div><div class="eagle-kpi-lbl">Late Transfers <i class="fa fa-external-link" style="font-size:10px"/></div></div>
+      </div>
+      <div class="eagle-kpi-card kpi-green">
+        <div class="eagle-kpi-icon"><i class="fa fa-check-circle"/></div>
+        <div><div class="eagle-kpi-val"><t t-esc="state.today_done"/></div><div class="eagle-kpi-lbl">Completed Today</div></div>
+      </div>
+    </div>
+
+    <!-- ══ FILTER BAR ══ -->
+    <div class="eagle-filter">
+      <div class="eagle-preset-bar">
+        <button t-on-click="()=>this.applyPreset('today')"      t-attf-class="eagle-preset-btn #{state.active_preset=='today'?'active':''}">Today</button>
+        <button t-on-click="()=>this.applyPreset('this_week')"  t-attf-class="eagle-preset-btn #{state.active_preset=='this_week'?'active':''}">This Week</button>
+        <button t-on-click="()=>this.applyPreset('this_month')" t-attf-class="eagle-preset-btn #{state.active_preset=='this_month'?'active':''}">This Month</button>
+        <button t-on-click="()=>this.applyPreset('this_year')"  t-attf-class="eagle-preset-btn #{state.active_preset=='this_year'?'active':''}">This Year</button>
+        <button t-on-click="()=>this.applyPreset('all')"        t-attf-class="eagle-preset-btn #{state.active_preset=='all'?'active':''}">All Time</button>
+      </div>
+      <div class="row g-2 align-items-end">
+        <div class="col-6 col-md-auto"><label class="form-label mb-1 small text-muted">Month</label>
+          <select class="form-select form-select-sm" t-on-change="onMonthChange"><t t-foreach="monthOptions" t-as="mo" t-key="mo.value"><option t-att-value="mo.value" t-att-selected="state.selected_month==mo.value"><t t-esc="mo.label"/></option></t></select></div>
+        <div class="col-6 col-md-auto"><label class="form-label mb-1 small text-muted">Year</label>
+          <select class="form-select form-select-sm" t-on-change="onYearChange"><t t-foreach="yearOptions" t-as="yr" t-key="yr"><option t-att-value="yr" t-att-selected="state.selected_year==yr.toString()"><t t-esc="yr"/></option></t></select></div>
+        <div class="col-6 col-md-auto"><label class="form-label mb-1 small text-muted">From</label><input type="date" class="form-control form-control-sm" t-model="state.from_date" t-on-change="onDateChange"/></div>
+        <div class="col-6 col-md-auto"><label class="form-label mb-1 small text-muted">To</label><input type="date" class="form-control form-control-sm" t-model="state.to_date" t-on-change="onDateChange"/></div>
+        <div class="col-12 col-md"><label class="form-label mb-1 small text-muted">Search (Reference / Partner)</label><input type="text" class="form-control form-control-sm" placeholder="Search..." t-model="state.partner_filter"/></div>
+        <div class="col-12 col-md-auto"><label class="form-label mb-1 small text-muted">Status</label>
+          <select class="form-select form-select-sm" t-on-change="onStatusFilterChange">
+            <option value="">— All Statuses —</option>
+            <option value="draft">Draft</option>
+            <option value="waiting">Waiting</option>
+            <option value="confirmed">Ready</option>
+            <option value="assigned">Ready</option>
+            <option value="done">Done</option>
+            <option value="cancel">Cancelled</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TABS ══ -->
+    <div class="eagle-nav" style="background:#f3f4f6;width:fit-content;margin-bottom:12px;">
+      <button t-attf-class="eagle-nav-btn #{state.activeTab==='deliveries'?'active':''}" style="color:#111827;" t-on-click="()=>this.setTab('deliveries')">
+        <i class="fa fa-truck me-1"/>Delivery Orders <span class="ebadge ebadge-blue ms-1"><t t-esc="filteredDeliveries.length"/></span>
+      </button>
+      <button t-attf-class="eagle-nav-btn #{state.activeTab==='receipts'?'active':''}" style="color:#111827;" t-on-click="()=>this.setTab('receipts')">
+        <i class="fa fa-inbox me-1"/>Receipts <span class="ebadge ebadge-blue ms-1"><t t-esc="filteredReceipts.length"/></span>
+      </button>
+      <button t-attf-class="eagle-nav-btn #{state.activeTab==='internal'?'active':''}" style="color:#111827;" t-on-click="()=>this.setTab('internal')">
+        <i class="fa fa-exchange me-1"/>Internal Transfers <span class="ebadge ebadge-blue ms-1"><t t-esc="filteredInternal.length"/></span>
+      </button>
+    </div>
+
+    <!-- ══ DELIVERY ORDERS ══ -->
+    <t t-if="state.activeTab==='deliveries'">
+      <div class="eagle-card">
+        <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-truck"/>Delivery Orders</h4>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportDeliveries" title="Export CSV"><i class="fa fa-download"/></button>
+        </div>
+        <div class="eagle-table-wrap"><table class="eagle-table">
+          <thead><tr><th>Reference</th><th>Partner</th><th>Scheduled</th><th>Origin</th><th class="text-end">Products</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <t t-if="filteredDeliveries.length===0"><tr><td colspan="7" class="text-center text-muted py-4 fst-italic">No delivery orders found.</td></tr></t>
+            <t t-foreach="filteredDeliveries" t-as="d" t-key="d.id"><tr>
+              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPicking(d.id)"><t t-esc="d.name"/></a></td>
+              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(d.partner_id)"><t t-esc="d.partner"/></a></td>
+              <td><t t-esc="d.scheduled_date"/> <t t-if="d.late"><span class="eagle-late-badge">LATE</span></t></td>
+              <td><t t-esc="d.origin"/></td>
+              <td class="text-end"><t t-esc="d.products_count"/></td>
+              <td><span t-attf-class="ebadge #{d.state=='done'?'ebadge-green':d.state=='cancel'?'ebadge-gray':d.late?'ebadge-red':'ebadge-yellow'}"><t t-esc="d.state"/></span></td>
+              <td>
+                <t t-if="!(['done','cancel'].includes(d.state))">
+                  <button class="ebtn ebtn-sm ebtn-green" t-on-click="(ev)=>this.validatePicking(d.id, ev)" title="Validate"><i class="fa fa-check"/></button>
+                </t>
+              </td>
+            </tr></t>
+          </tbody>
+        </table></div>
+      </div>
+    </t>
+
+    <!-- ══ RECEIPTS ══ -->
+    <t t-if="state.activeTab==='receipts'">
+      <div class="eagle-card">
+        <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-inbox"/>Receipts</h4>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportReceipts" title="Export CSV"><i class="fa fa-download"/></button>
+        </div>
+        <div class="eagle-table-wrap"><table class="eagle-table">
+          <thead><tr><th>Reference</th><th>Partner</th><th>Scheduled</th><th>Origin</th><th class="text-end">Products</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <t t-if="filteredReceipts.length===0"><tr><td colspan="7" class="text-center text-muted py-4 fst-italic">No receipts found.</td></tr></t>
+            <t t-foreach="filteredReceipts" t-as="r" t-key="r.id"><tr>
+              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPicking(r.id)"><t t-esc="r.name"/></a></td>
+              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(r.partner_id)"><t t-esc="r.partner"/></a></td>
+              <td><t t-esc="r.scheduled_date"/> <t t-if="r.late"><span class="eagle-late-badge">LATE</span></t></td>
+              <td><t t-esc="r.origin"/></td>
+              <td class="text-end"><t t-esc="r.products_count"/></td>
+              <td><span t-attf-class="ebadge #{r.state=='done'?'ebadge-green':r.state=='cancel'?'ebadge-gray':r.late?'ebadge-red':'ebadge-yellow'}"><t t-esc="r.state"/></span></td>
+              <td>
+                <t t-if="!(['done','cancel'].includes(r.state))">
+                  <button class="ebtn ebtn-sm ebtn-green" t-on-click="(ev)=>this.validatePicking(r.id, ev)" title="Validate"><i class="fa fa-check"/></button>
+                </t>
+              </td>
+            </tr></t>
+          </tbody>
+        </table></div>
+      </div>
+    </t>
+
+    <!-- ══ INTERNAL TRANSFERS ══ -->
+    <t t-if="state.activeTab==='internal'">
+      <div class="eagle-card">
+        <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-exchange"/>Internal Transfers</h4>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportInternal" title="Export CSV"><i class="fa fa-download"/></button>
+        </div>
+        <div class="eagle-table-wrap"><table class="eagle-table">
+          <thead><tr><th>Reference</th><th>Partner</th><th>Scheduled</th><th>Origin</th><th class="text-end">Products</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <t t-if="filteredInternal.length===0"><tr><td colspan="7" class="text-center text-muted py-4 fst-italic">No internal transfers found.</td></tr></t>
+            <t t-foreach="filteredInternal" t-as="i" t-key="i.id"><tr>
+              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPicking(i.id)"><t t-esc="i.name"/></a></td>
+              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(i.partner_id)"><t t-esc="i.partner"/></a></td>
+              <td><t t-esc="i.scheduled_date"/> <t t-if="i.late"><span class="eagle-late-badge">LATE</span></t></td>
+              <td><t t-esc="i.origin"/></td>
+              <td class="text-end"><t t-esc="i.products_count"/></td>
+              <td><span t-attf-class="ebadge #{i.state=='done'?'ebadge-green':i.state=='cancel'?'ebadge-gray':i.late?'ebadge-red':'ebadge-yellow'}"><t t-esc="i.state"/></span></td>
+              <td>
+                <t t-if="!(['done','cancel'].includes(i.state))">
+                  <button class="ebtn ebtn-sm ebtn-green" t-on-click="(ev)=>this.validatePicking(i.id, ev)" title="Validate"><i class="fa fa-check"/></button>
+                </t>
+              </td>
+            </tr></t>
+          </tbody>
+        </table></div>
+      </div>
+    </t>
+
+  </div>
+</div>
+</t>
+</templates>

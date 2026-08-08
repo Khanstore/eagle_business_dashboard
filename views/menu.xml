@@ -9,20 +9,210 @@
         <field name="tag">finance_dashboard_tag</field>
     </record>
 
+    <record id="operations_dashboard_action" model="ir.actions.client">
+        <field name="name">Operations Dashboard</field>
+        <field name="tag">operations_dashboard_tag</field>
+    </record>
+
     <menuitem id="advanced_dashboard_menu"
               name="Business Dashboard"
               web_icon="eagle_business_dashboard,static/description/icon.png"
               action="advanced_dashboard_action"
               sequence="1"/>
 
-    <menuitem id="finance_dashboard_menu"
-              parent="advanced_dashboard_menu"
-              name="Finance Dashboard"
-              action="finance_dashboard_action"
-              sequence="2"/>
-    <menuitem id="Business_dashboard_menu"
-              parent="advanced_dashboard_menu"
-              name="Business Dashboard"
-              action="advanced_dashboard_action"
-              sequence="2"/>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         MASTER MENU — quick access to every relevant screen, organised
+         by category. Each action below is OWNED by this module and
+         points directly at a stable model name, so installation never
+         depends on external-module xmlids that could differ by version.
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Product ── -->
+    <menuitem id="master_menu_product" parent="advanced_dashboard_menu" name="Product" sequence="1"/>
+
+    <record id="master_action_products" model="ir.actions.act_window">
+        <field name="name">Products</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+    <menuitem id="master_menu_product_products" parent="master_menu_product" name="Products" action="master_action_products" sequence="1"/>
+
+    <record id="master_action_product_variants" model="ir.actions.act_window">
+        <field name="name">Product Variants</field>
+        <field name="res_model">product.product</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+    <menuitem id="master_menu_product_variants" parent="master_menu_product" name="Product Variants" action="master_action_product_variants" sequence="2"/>
+
+    <record id="master_action_product_categories" model="ir.actions.act_window">
+        <field name="name">Product Categories</field>
+        <field name="res_model">product.category</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="master_menu_product_categories" parent="master_menu_product" name="Product Categories" action="master_action_product_categories" sequence="3"/>
+
+    <!-- ── Contact ── -->
+    <menuitem id="master_menu_contact" parent="advanced_dashboard_menu" name="Contact" sequence="2"/>
+
+    <record id="master_action_contacts" model="ir.actions.act_window">
+        <field name="name">Contacts</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <menuitem id="master_menu_contact_all" parent="master_menu_contact" name="All Contacts" action="master_action_contacts" sequence="1"/>
+
+    <record id="master_action_customers" model="ir.actions.act_window">
+        <field name="name">Customers</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="domain">[('customer_rank','&gt;',0)]</field>
+    </record>
+    <menuitem id="master_menu_contact_customers" parent="master_menu_contact" name="Customers" action="master_action_customers" sequence="2"/>
+
+    <record id="master_action_vendors" model="ir.actions.act_window">
+        <field name="name">Vendors</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="domain">[('supplier_rank','&gt;',0)]</field>
+    </record>
+    <menuitem id="master_menu_contact_vendors" parent="master_menu_contact" name="Vendors" action="master_action_vendors" sequence="3"/>
+
+    <!-- ── Sale ── -->
+    <menuitem id="master_menu_sale" parent="advanced_dashboard_menu" name="Sale" sequence="3"/>
+
+    <record id="master_action_quotations" model="ir.actions.act_window">
+        <field name="name">Quotations</field>
+        <field name="res_model">sale.order</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('state','=','draft')]</field>
+    </record>
+    <menuitem id="master_menu_sale_quotations" parent="master_menu_sale" name="Quotations" action="master_action_quotations" sequence="1"/>
+
+    <record id="master_action_sale_orders" model="ir.actions.act_window">
+        <field name="name">Sales Orders</field>
+        <field name="res_model">sale.order</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('state','=','sale')]</field>
+    </record>
+    <menuitem id="master_menu_sale_orders" parent="master_menu_sale" name="Sales Orders" action="master_action_sale_orders" sequence="2"/>
+
+    <!-- ── Purchase ── -->
+    <menuitem id="master_menu_purchase" parent="advanced_dashboard_menu" name="Purchase" sequence="4"/>
+
+    <record id="master_action_rfq" model="ir.actions.act_window">
+        <field name="name">Requests for Quotation</field>
+        <field name="res_model">purchase.order</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('state','in',('draft','sent'))]</field>
+    </record>
+    <menuitem id="master_menu_purchase_rfq" parent="master_menu_purchase" name="Requests for Quotation" action="master_action_rfq" sequence="1"/>
+
+    <record id="master_action_purchase_orders" model="ir.actions.act_window">
+        <field name="name">Purchase Orders</field>
+        <field name="res_model">purchase.order</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('state','in',('purchase','done'))]</field>
+    </record>
+    <menuitem id="master_menu_purchase_orders" parent="master_menu_purchase" name="Purchase Orders" action="master_action_purchase_orders" sequence="2"/>
+
+    <!-- ── Inventory ── -->
+    <menuitem id="master_menu_inventory" parent="advanced_dashboard_menu" name="Inventory" sequence="5"/>
+
+    <record id="master_action_transfers" model="ir.actions.act_window">
+        <field name="name">Transfers</field>
+        <field name="res_model">stock.picking</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+    <menuitem id="master_menu_inventory_transfers" parent="master_menu_inventory" name="Transfers" action="master_action_transfers" sequence="1"/>
+
+    <record id="master_action_warehouses" model="ir.actions.act_window">
+        <field name="name">Warehouses</field>
+        <field name="res_model">stock.warehouse</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="master_menu_inventory_warehouses" parent="master_menu_inventory" name="Warehouses" action="master_action_warehouses" sequence="2"/>
+
+    <record id="master_action_stock_quants" model="ir.actions.act_window">
+        <field name="name">Stock on Hand</field>
+        <field name="res_model">stock.quant</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="master_menu_inventory_quants" parent="master_menu_inventory" name="Stock on Hand" action="master_action_stock_quants" sequence="3"/>
+
+    <!-- ── Operations (Delivery Orders / Receipts) ── -->
+    <menuitem id="master_menu_operations" parent="advanced_dashboard_menu" name="Operations" sequence="6"/>
+
+    <menuitem id="master_menu_operations_dashboard"
+              parent="master_menu_operations"
+              name="Operations Dashboard"
+              action="operations_dashboard_action"
+              sequence="1"/>
+
+    <record id="master_action_delivery_orders" model="ir.actions.act_window">
+        <field name="name">Delivery Orders</field>
+        <field name="res_model">stock.picking</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('picking_type_id.code','=','outgoing')]</field>
+    </record>
+    <menuitem id="master_menu_operations_deliveries" parent="master_menu_operations" name="Delivery Orders" action="master_action_delivery_orders" sequence="2"/>
+
+    <record id="master_action_receipts" model="ir.actions.act_window">
+        <field name="name">Receipts</field>
+        <field name="res_model">stock.picking</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('picking_type_id.code','=','incoming')]</field>
+    </record>
+    <menuitem id="master_menu_operations_receipts" parent="master_menu_operations" name="Receipts" action="master_action_receipts" sequence="3"/>
+
+    <!-- ── Accounting ── -->
+    <menuitem id="master_menu_accounting" parent="advanced_dashboard_menu" name="Accounting" sequence="7"/>
+
+    <record id="master_action_customer_invoices" model="ir.actions.act_window">
+        <field name="name">Customer Invoices</field>
+        <field name="res_model">account.move</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('move_type','=','out_invoice')]</field>
+        <field name="context">{'default_move_type': 'out_invoice'}</field>
+    </record>
+    <menuitem id="master_menu_accounting_invoices" parent="master_menu_accounting" name="Customer Invoices" action="master_action_customer_invoices" sequence="1"/>
+
+    <record id="master_action_vendor_bills" model="ir.actions.act_window">
+        <field name="name">Vendor Bills</field>
+        <field name="res_model">account.move</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('move_type','=','in_invoice')]</field>
+        <field name="context">{'default_move_type': 'in_invoice'}</field>
+    </record>
+    <menuitem id="master_menu_accounting_bills" parent="master_menu_accounting" name="Vendor Bills" action="master_action_vendor_bills" sequence="2"/>
+
+    <record id="master_action_payments" model="ir.actions.act_window">
+        <field name="name">Payments</field>
+        <field name="res_model">account.payment</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+    <menuitem id="master_menu_accounting_payments" parent="master_menu_accounting" name="Payments" action="master_action_payments" sequence="3"/>
+
+    <record id="master_action_journals" model="ir.actions.act_window">
+        <field name="name">Journals</field>
+        <field name="res_model">account.journal</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="master_menu_accounting_journals" parent="master_menu_accounting" name="Journals" action="master_action_journals" sequence="4"/>
+
+    <record id="master_action_chart_of_accounts" model="ir.actions.act_window">
+        <field name="name">Chart of Accounts</field>
+        <field name="res_model">account.account</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="master_menu_accounting_chart" parent="master_menu_accounting" name="Chart of Accounts" action="master_action_chart_of_accounts" sequence="5"/>
+
+    <record id="master_action_journal_entries" model="ir.actions.act_window">
+        <field name="name">Journal Entries</field>
+        <field name="res_model">account.move</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('move_type','=','entry')]</field>
+        <field name="context">{'default_move_type': 'entry'}</field>
+    </record>
+    <menuitem id="master_menu_accounting_entries" parent="master_menu_accounting" name="Journal Entries" action="master_action_journal_entries" sequence="6"/>
 </odoo>

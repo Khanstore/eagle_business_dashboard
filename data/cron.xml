@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data noupdate="1">
+    <record id="mail_template_daily_digest" model="mail.template">
+      <field name="name">Dashboard Daily Digest</field>
+      <field name="model_id" ref="base.model_res_users"/>
+      <field name="subject">Khan Store — Daily Business Digest</field>
+      <field name="body_html" type="html">
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;">
+          <h2 style="color:#1a1f36;">Daily Business Digest</h2>
+          <p style="color:#6b7280;font-size:13px;">${ctx.get('digest_date','')}</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+            <tr><td style="padding:8px;border:1px solid #e5e7eb;">Today's Sales</td><td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">BDT ${ctx.get('today_sales','0.00')}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #e5e7eb;">Overdue Invoices</td><td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626;">${ctx.get('overdue_count','0')} (BDT ${ctx.get('overdue_amount','0.00')})</td></tr>
+            <tr><td style="padding:8px;border:1px solid #e5e7eb;">Cash Balance</td><td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">BDT ${ctx.get('cash_balance','0.00')}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #e5e7eb;">Low Stock Items</td><td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">${ctx.get('low_stock_count','0')}</td></tr>
+          </table>
+          <p style="font-size:12px;color:#9ca3af;">Sent automatically by the Khan Store Dashboard.</p>
+        </div>
+      </field>
+    </record>
+
+    <record id="cron_daily_digest" model="ir.cron">
+      <field name="name">Dashboard: Send Daily Digest Email</field>
+      <field name="model_id" ref="model_dashboard_data"/>
+      <field name="code">model.send_daily_digest()</field>
+      <field name="interval_number">1</field>
+      <field name="interval_type">days</field>
+      <field name="active">False</field>
+    </record>
+  </data>
+</odoo>
