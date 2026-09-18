@@ -1,3 +1,4 @@
+import uuid
 from odoo import models, fields, api
 
 
@@ -42,25 +43,53 @@ class DashboardApprovalConfig(models.Model):
 
 class DashboardSnoozedProduct(models.Model):
     _name = "dashboard.snoozed.product"
-    _description = "Temporarily hidden low-stock product"
+    _description = "Temporarily Hidden Low-Stock Product"
     _order = "hide_until desc"
 
     product_id = fields.Many2one('product.product', required=True, ondelete='cascade')
-    hide_until = fields.Date(required=True)
+    hide_until = fields.Date(required=True, string="Hidden Until")
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
 
     _sql_constraints = [
-        ('uniq_product', 'unique(product_id)', 'This product is already snoozed. Update the existing snooze instead.'),
+        ('product_uniq', 'unique(product_id)', 'This product is already snoozed. Update the existing entry instead.')
     ]
 
 
-class DashboardSnoozedProduct(models.Model):
-    _name = "dashboard.snoozed.product"
-    _description = "Temporarily Hidden Low-Stock Product"
+# ─── Feature batch 3: presence, comments, snapshot links ──────────────────
 
-    product_id = fields.Many2one('product.product', required=True, ondelete='cascade')
-    hide_until = fields.Date(required=True, string="Hidden Until")
+class DashboardPresence(models.Model):
+    _name = "dashboard.presence"
+    _description = "Dashboard Live Presence (who currently has it open)"
+    _rec_name = "user_id"
+
+    user_id = fields.Many2one('res.users', required=True, ondelete='cascade')
+    last_seen = fields.Datetime(required=True)
 
     _sql_constraints = [
-        ('product_uniq', 'unique(product_id)', 'This product is already snoozed. Update the existing entry instead.')
+        ('user_uniq', 'unique(user_id)', 'User already has a presence row.')
+    ]
+
+
+class DashboardKpiComment(models.Model):
+    _name = "dashboard.kpi.comment"
+    _description = "Comment thread on a dashboard KPI card"
+    _order = "create_date desc"
+
+    kpi_key = fields.Char(required=True, index=True)
+    text = fields.Char(required=True)
+    user_id = fields.Many2one('res.users', default=lambda self: self.env.user, required=True)
+    create_date = fields.Datetime(readonly=True)
+
+
+class DashboardSnapshotLink(models.Model):
+    _name = "dashboard.snapshot.link"
+    _description = "Shareable read-only dashboard snapshot link"
+
+    token = fields.Char(required=True, index=True, default=lambda self: uuid.uuid4().hex)
+    created_by = fields.Many2one('res.users', default=lambda self: self.env.user)
+    expires_at = fields.Datetime(required=True)
+    snapshot_data = fields.Text()  # JSON blob captured at creation time
+
+    _sql_constraints = [
+        ('token_uniq', 'unique(token)', 'Token collision, try again.')
     ]

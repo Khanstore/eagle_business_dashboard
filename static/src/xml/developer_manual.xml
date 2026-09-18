@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+<t t-name="advanced_business_dashboard.developer_manual">
+<div t-attf-class="eagle-app #{state.darkMode ? 'dark' : ''}" t-att-style="themeStyle + 'height:100%;display:flex;flex-direction:column;'">
+
+  <!-- HEADER -->
+  <div class="eagle-header">
+    <div class="eagle-brand">
+      <div class="eagle-brand-icon"><i class="fa fa-code" style="color:#fff"/></div>
+      <t t-esc="state.companyName || 'Business Dashboard'"/> - Developer Manual
+    </div>
+    <div class="eagle-nav">
+      <button class="eagle-nav-btn" t-on-click="goToBusinessDashboard">Business</button>
+      <button class="eagle-nav-btn" t-on-click="goToFinanceDashboard">Finance</button>
+      <button class="eagle-nav-btn" t-on-click="goToOperationsDashboard">Operations</button>
+      <button class="eagle-nav-btn active">Dev Docs</button>
+    </div>
+    <div class="eagle-header-actions">
+      <button class="eagle-manual-tool" t-on-click="printManual" title="Print this manual"><i class="fa fa-print"/></button>
+      <button class="eagle-manual-tool" t-on-click="toggleDark" title="Toggle dark mode"><i class="fa fa-moon-o"/></button>
+    </div>
+  </div>
+
+  <div class="eagle-manual-wrap">
+
+    <!-- SIDEBAR -->
+    <div class="eagle-manual-side">
+      <div class="eagle-manual-search">
+        <i class="fa fa-search"/>
+        <input type="text" placeholder="Search topics..." t-model="state.query"/>
+      </div>
+      <div class="eagle-manual-navlist">
+        <t t-foreach="visibleSections" t-as="sec" t-key="sec.id">
+          <button t-attf-class="eagle-manual-navbtn #{state.section === sec.id ? 'active' : ''}"
+                  t-on-click="() => this.select(sec.id)">
+            <i t-attf-class="fa #{sec.icon}"/>
+            <span t-esc="sec.title"/>
+          </button>
+        </t>
+        <div t-if="visibleSections.length === 0" class="eagle-manual-empty">No topic matches that search.</div>
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="eagle-manual-content">
+      <h1 class="eagle-manual-h1"><t t-esc="currentTitle"/></h1>
+
+      <!-- STRUCTURE -->
+      <div t-if="state.section === 'structure'">
+        <p class="eagle-manual-lead">Technical name <code>eagle_business_dashboard</code>, author SM Ashraf, licence LGPL-3, declared as an application.</p>
+        <pre class="eagle-manual-code">eagle_business_dashboard/
+  __init__.py
+  __manifest__.py
+  controllers/
+    __init__.py
+    main.py                     public snapshot route
+  data/
+    cron.xml                    daily digest scheduled job
+  models/
+    __init__.py
+    dashboard.py                dashboard.data - all RPC methods
+    dashboard_models.py         persistent models
+  security/
+    groups.xml                  three dashboard groups
+    ir.model.access.csv         ACLs for the persistent models
+  static/
+    description/                icons
+    src/
+      css/dashboard.css         whole design system
+      js/shared_filter_state.js cross-dashboard filter singleton
+      js/dashboard.js           Business Dashboard component
+      js/finance_dashboard.js   Finance Dashboard component
+      js/operations_dashboard.js Operations Dashboard component
+      js/manuals.js             User + Developer manual components
+      xml/dashboard.xml
+      xml/finance_dashboard.xml
+      xml/operations_dashboard.xml
+      xml/user_manual.xml
+      xml/developer_manual.xml
+      manifest/pwa_manifest.json
+  views/
+    menu.xml                    client actions, app menu, master menus, docs menu
+    snapshot_templates.xml      public snapshot QWeb pages</pre>
+        <p>The split is deliberate: <code>dashboard.py</code> holds an abstract model with every method the frontend calls, while <code>dashboard_models.py</code> holds only the models that actually store rows.</p>
+      </div>
+
+      <!-- MANIFEST -->
+      <div t-if="state.section === 'manifest'">
+        <h3>Dependencies</h3>
+        <p><code>sale</code>, <code>purchase</code>, <code>account</code>, <code>web</code>, <code>stock</code>, <code>mail</code>. Nothing outside standard Odoo, so the module installs on any Odoo 18 database with those apps.</p>
+        <h3>Data files, in load order</h3>
+        <pre class="eagle-manual-code">security/groups.xml
+security/ir.model.access.csv
+data/cron.xml
+views/menu.xml
+views/snapshot_templates.xml</pre>
+        <p>Groups load before the ACL file because the CSV references <code>eagle_business_dashboard.group_dashboard_admin</code>. Cron loads before menus because it references <code>model_dashboard_data</code>.</p>
+        <h3>Asset bundle order matters</h3>
+        <pre class="eagle-manual-code">web.assets_backend:
+  js/shared_filter_state.js      &lt;-- must be first
+  js/dashboard.js
+  xml/dashboard.xml
+  css/dashboard.css
+  js/finance_dashboard.js
+  xml/finance_dashboard.xml
+  js/operations_dashboard.js
+  xml/operations_dashboard.xml
+  js/manuals.js
+  xml/user_manual.xml
+  xml/developer_manual.xml</pre>
+        <div class="eagle-manual-warn"><b>Do not reorder:</b> <code>shared_filter_state.js</code> exports the singleton that all three dashboard components import at module scope. Loading it after them breaks the import.</div>
+      </div>
+
+      <!-- MODELS -->
+      <div t-if="state.section === 'models'">
+        <h3>dashboard.data (AbstractModel)</h3>
+        <p>Defined in <code>models/dashboard.py</code>. It stores nothing - it is the RPC surface. Every method the frontend calls lives here and carries <code>@api.model</code>.</p>
+        <h3>Persistent models</h3>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Model</th><th>Purpose</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>dashboard.saved.filter</code></td><td>Named filter presets</td><td>Per user; <code>dashboard</code> selection is business or finance</td></tr>
+            <tr><td><code>dashboard.approval.config</code></td><td>Sale/purchase approval thresholds</td><td>Singleton by convention - <code>get_config</code> creates the row if absent</td></tr>
+            <tr><td><code>dashboard.snoozed.product</code></td><td>Temporarily hidden low-stock products</td><td>Unique on <code>product_id</code>; <code>ondelete='cascade'</code></td></tr>
+            <tr><td><code>dashboard.presence</code></td><td>Who has the dashboard open</td><td>Unique on <code>user_id</code>; written by the heartbeat</td></tr>
+            <tr><td><code>dashboard.kpi.comment</code></td><td>Comment threads per KPI card</td><td>Indexed <code>kpi_key</code>; newest first</td></tr>
+            <tr><td><code>dashboard.snapshot.link</code></td><td>Public read-only snapshot tokens</td><td><code>token</code> defaults to <code>uuid4().hex</code>, unique and indexed</td></tr>
+          </tbody>
+        </table>
+        <div class="eagle-manual-tip">Adding a model means adding a line to <code>ir.model.access.csv</code> in the same commit, or the first RPC call from the frontend fails with an access error rather than anything descriptive.</div>
+      </div>
+
+      <!-- RPC -->
+      <div t-if="state.section === 'rpc'">
+        <p class="eagle-manual-lead">All called as <code>this.orm.call("dashboard.data", "method_name", [args])</code>.</p>
+        <h3>Data loading</h3>
+        <pre class="eagle-manual-code">get_dashboard(from_date, to_date)          Business screen payload
+get_business_widgets()                     Business side widgets
+get_finance_dashboard(from_date, to_date)  Finance screen payload
+get_finance_widgets()                      Finance side widgets
+get_operations_dashboard(from, to)         Operations screen payload
+get_operations_widgets()                   Operations side widgets
+get_company_info()                         Company name + id for the header
+get_trend_data(from, to, model)            Trend series; model = sale|purchase</pre>
+        <h3>Analytics</h3>
+        <pre class="eagle-manual-code">get_aging_report()            get_cash_forecast()
+get_customer_intelligence()   get_seasonal_heatmap()
+get_best_worst_day()          get_anomalies()
+get_product_bundles()         get_vendor_scorecard()
+get_reorder_predictions()     get_nl_summary()
+get_streak()                  get_currency_rates()</pre>
+        <h3>Financial controls</h3>
+        <pre class="eagle-manual-code">get_financial_controls()   get_duplicate_invoices()
+get_audit_trail(limit)     get_missing_tax_id_partners()
+get_journal_balance(from, to)
+get_journal_transactions(journal_id, from, to)</pre>
+        <h3>Write actions</h3>
+        <pre class="eagle-manual-code">create_quick_sale(partner_id, product_id, qty, price_unit)
+complete_order(model, record_id)  one-click fulfilment chain
+validate_payment(payment_id)      validate_picking(picking_id)
+bulk_mark_paid(move_ids)
+approve_sale_order(order_id)      approve_purchase_order(order_id)
+get_approval_queue()
+snooze_low_stock_product(product_id, weeks)
+unsnooze_low_stock_product(product_id)
+save_sales_target(amount)
+save_team_notes(notes) / save_team_notes_with_mentions(notes)</pre>
+        <h3>Preferences, presets, collaboration</h3>
+        <pre class="eagle-manual-code">get_visibility() / save_visibility(config)
+get_user_layout(dashboard) / save_user_layout(dashboard, layout)
+get_theme_color() / save_theme_color(color)
+get_saved_filters(dashboard)
+save_filter_preset(dashboard, name, from, to, partner_filter, active_preset)
+delete_filter_preset(filter_id)
+heartbeat() / get_online_users()
+get_kpi_comments(kpi_key) / add_kpi_comment(kpi_key, text)
+create_snapshot_link(snapshot_dict, hours=48)
+get_product_options()
+open_dynamic_action(model, domain, name)
+send_daily_digest() / toggle_daily_digest(enabled) / get_digest_status()</pre>
+        <div class="eagle-manual-warn"><b>Required:</b> every method reachable from the frontend needs <code>@api.model</code>. Without it the call fails at dispatch, and the browser console error does not name the missing decorator.</div>
+      </div>
+
+      <!-- OWL -->
+      <div t-if="state.section === 'owl'">
+        <h3>Component registration</h3>
+        <p>Each screen is a client action. The pattern, repeated for all five components:</p>
+        <pre class="eagle-manual-code">MyComponent.template = "advanced_business_dashboard.my_template";
+registry.category("actions").add("my_action_tag", MyComponent);</pre>
+        <p>The tag is matched by an <code>ir.actions.client</code> record in <code>views/menu.xml</code>.</p>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Tag</th><th>Component</th><th>File</th></tr></thead>
+          <tbody>
+            <tr><td><code>advanced_dashboard_tag</code></td><td>Business</td><td>dashboard.js</td></tr>
+            <tr><td><code>finance_dashboard_tag</code></td><td>Finance</td><td>finance_dashboard.js</td></tr>
+            <tr><td><code>operations_dashboard_tag</code></td><td>Operations</td><td>operations_dashboard.js</td></tr>
+            <tr><td><code>eagle_user_manual_tag</code></td><td>UserManual</td><td>manuals.js</td></tr>
+            <tr><td><code>eagle_developer_manual_tag</code></td><td>DeveloperManual</td><td>manuals.js</td></tr>
+          </tbody>
+        </table>
+        <h3>Lifecycle used</h3>
+        <p><code>setup()</code> builds <code>useState</code> and the month/year option lists; <code>onWillStart</code> fetches the first payload; <code>onMounted</code> starts the presence heartbeat timer; <code>onWillDestroy</code> clears it. Any timer you add must be cleared in <code>onWillDestroy</code> or it keeps firing after the user navigates away.</p>
+        <h3>Opening records</h3>
+        <p>Drill-down goes through <code>open_dynamic_action</code>, which creates an action server-side and returns its id. The frontend then opens <code>/odoo/action-{id}</code> in a new tab. This exists because a dynamic domain cannot be expressed as a static xmlid.</p>
+        <h3>The manual components</h3>
+        <p><code>manuals.js</code> defines a <code>ManualBase</code> class holding the sidebar search, section switching, print and dark-mode toggles; <code>UserManual</code> and <code>DeveloperManual</code> extend it and supply a static <code>sections</code> array. To add a topic, add one entry to that array and one <code>t-if</code> block to the matching XML template - nothing else.</p>
+      </div>
+
+      <!-- FILTER STATE -->
+      <div t-if="state.section === 'filterstate'">
+        <p class="eagle-manual-lead"><code>shared_filter_state.js</code> exports a plain mutable object imported by all three dashboards. It is a module-scope singleton, not an Odoo service.</p>
+        <pre class="eagle-manual-code">from_date, to_date, partner_filter,
+active_preset, selected_month, selected_year</pre>
+        <h3>Contract</h3>
+        <p>On <code>setup()</code> a component seeds its <code>useState</code> from the singleton. Before navigating away it calls its <code>_syncShared()</code> helper to push current values back. The next screen therefore opens with the same filters.</p>
+        <div class="eagle-manual-warn">State lives in browser memory only - a page reload resets it to defaults. Anything that must survive a reload belongs in <code>dashboard.saved.filter</code> instead.</div>
+      </div>
+
+      <!-- QUICK SALE -->
+      <div t-if="state.section === 'quicksale'">
+        <h3>Product options</h3>
+        <p><code>get_product_options()</code> returns id and label pairs to populate the searchable dropdown. This exists because an earlier build required users to type a raw database id, which is not usable UX. Never reintroduce an id-entry field.</p>
+        <h3>Order merge</h3>
+        <p><code>create_quick_sale</code> searches for an existing draft <code>sale.order</code> for the partner. If one exists the line is appended to it; otherwise a new draft is created. This prevents a pile of one-line drafts per customer.</p>
+        <h3>Price handling</h3>
+        <p><code>price_unit</code> is optional. When omitted, Odoo's own pricelist resolution applies; when supplied it overrides. Failures are returned to the frontend as a message rather than raised as a traceback, so the panel can show a readable error under the button.</p>
+      </div>
+
+      <!-- BUNDLES -->
+      <div t-if="state.section === 'bundles'">
+        <h3>get_product_bundles()</h3>
+        <p>The frequently-bought-together panel. It pairs products co-occurring on the same order and ranks pairs by frequency. Raw SQL is used rather than the ORM because the self-join over order lines is far cheaper in SQL.</p>
+        <h3>get_cash_forecast()</h3>
+        <p>A 30-day projection built from posted invoices and bills with due dates in the window. It is arithmetic on existing documents, not a statistical forecast - do not describe it to users as a prediction of future sales.</p>
+        <h3>get_anomalies() and get_seasonal_heatmap()</h3>
+        <p>Both compare current figures against historical aggregates. They are indicative and intended to prompt a human check.</p>
+      </div>
+
+      <!-- FULFILMENT -->
+      <div t-if="state.section === 'fulfil'">
+        <p class="eagle-manual-lead">One-click completion for sale and purchase orders, plus the extended payment validation. Entry point: <code>complete_order(model, record_id)</code>.</p>
+        <h3>Accepted models</h3>
+        <p><code>sale.order</code> and <code>purchase.order</code> only. Anything else raises a <code>UserError</code> rather than guessing.</p>
+        <h3>Stages</h3>
+        <pre class="eagle-manual-code">1. Confirm      draft|sent|to approve
+                  sale     -&gt; action_confirm()
+                  purchase -&gt; button_confirm()
+                  failure here aborts - later stages need a confirmed order
+
+2. Transfers    order.picking_ids, state not in (done, cancel)
+                  action_assign()
+                  move.quantity = move.product_uom_qty; move.picked = True
+                  button_validate()
+                  wizard action dict -&gt; create({}) then process()
+
+3. Invoice      sale     invoice_status == 'to invoice' -&gt; _create_invoices()
+                  purchase invoice_status == 'to invoice' -&gt; action_create_invoice()
+
+4. Post         draft invoice_ids -&gt; action_post()
+                  vendor bills get invoice_date = today first</pre>
+        <h3>Savepoints, not all-or-nothing</h3>
+        <p>Every stage - and every individual picking - runs inside <code>self.env.cr.savepoint()</code>. A stage that raises is rolled back to its savepoint and appended to <code>warnings</code>; stages that already succeeded stand. This is deliberate: a short-stock delivery should not discard a confirmation that worked.</p>
+        <p>The return payload is <code>{id, name, state, invoice_status, steps, warnings}</code>. The frontend shows <code>steps</code> as what happened and <code>warnings</code> as what stopped short.</p>
+        <h3>Idempotency</h3>
+        <p>Every stage tests its own state before acting, so the method is safe to call repeatedly. This is what lets the user press Process again after fixing a blockage rather than having to unpick anything.</p>
+        <h3>Button visibility</h3>
+        <p><code>get_dashboard</code> attaches a <code>can_process</code> boolean to every row in <code>quotations</code>, <code>orders</code>, <code>purchases</code> and <code>rfq</code>. It is true when the state is still open, the invoice status is <code>to invoice</code>, a picking is outstanding, or a draft invoice exists. The template shows the button on <code>can_process</code> alone - never compute this in the template.</p>
+        <h3>Payment validation</h3>
+        <p><code>validate_payment</code> now drives the Odoo 18 chain <code>draft -&gt; in_process -&gt; paid</code>. A draft is posted with <code>action_post()</code>; an <code>in_process</code> payment is then advanced with <code>action_validate()</code>, guarded by <code>hasattr</code> because that method is not present on every Odoo 18 build. The template shows the Validate button for both <code>draft</code> and <code>in_process</code>.</p>
+        <h3>Helpers</h3>
+        <pre class="eagle-manual-code">_eagle_fill_picking_quantities(picking)   set done qty from demand
+_eagle_validate_picking(picking)          validate + answer wizards
+_eagle_post_invoices(invoices)            post drafts, date vendor bills
+_eagle_err(exc)                           one-line readable message</pre>
+        <p>These are plain methods, not <code>@api.model</code> - they are internal and must not be reachable by RPC.</p>
+        <div class="eagle-manual-warn"><b>Irreversible:</b> stages 2 and 4 move stock and post accounting entries. Any change here needs testing on a database copy first, never straight on the live instance.</div>
+      </div>
+
+      <!-- SNAPSHOT -->
+      <div t-if="state.section === 'snapshot'">
+        <h3>Route</h3>
+        <pre class="eagle-manual-code">/dashboard/snapshot/&lt;string:token&gt;
+type='http', auth='public', website=False</pre>
+        <h3>Flow</h3>
+        <p><code>create_snapshot_link(snapshot_dict, hours)</code> serialises the current figures to JSON in <code>snapshot_data</code> and returns a token. The controller looks the token up with <code>sudo()</code>, checks <code>expires_at</code>, and renders <code>snapshot_view</code> - or <code>snapshot_expired</code> when missing or lapsed. JSON parsing is wrapped in try/except and falls back to an empty dict, so a corrupt blob renders an empty page rather than a 500.</p>
+        <div class="eagle-manual-warn"><b>Security:</b> this route is <code>auth='public'</code> and uses <code>sudo()</code>. The token is the only control. Never widen what the snapshot payload contains without considering that it is readable by anyone holding the URL, and keep default expiry short.</div>
+      </div>
+
+      <!-- CRON -->
+      <div t-if="state.section === 'cron'">
+        <h3>The job</h3>
+        <pre class="eagle-manual-code">id:       cron_daily_digest
+model:    dashboard.data
+code:     model.send_daily_digest()
+interval: 1 day
+active:   False        (off on install, by design)</pre>
+        <p>Wrapped in <code>&lt;data noupdate="1"&gt;</code> so a module upgrade does not re-disable a job the customer switched on. <code>toggle_daily_digest(enabled)</code> flips <code>active</code>; <code>get_digest_status()</code> reports it.</p>
+        <h3>Mail construction</h3>
+        <p>The digest body is built with Python f-strings and sent through <code>mail.mail</code> directly, not through a <code>mail.template</code>.</p>
+        <div class="eagle-manual-warn">Mako <code>${...}</code> syntax is not rendered in Odoo 17/18 mail templates. This is why the digest bypasses templates entirely. Do not "improve" it back into a <code>mail.template</code>.</div>
+        <div class="eagle-manual-tip">The <code>numbercall</code> field was removed in Odoo 18. Adding it to an <code>ir.cron</code> record raises on install.</div>
+      </div>
+
+      <!-- SECURITY -->
+      <div t-if="state.section === 'security'">
+        <h3>Groups</h3>
+        <pre class="eagle-manual-code">group_dashboard_user     KPI cards and summary tables
+group_dashboard_manager  + analytics, operations, customers
+group_dashboard_admin    everything + visibility configuration</pre>
+        <p>All three sit in <code>base.module_category_hidden</code> so they do not clutter the user form's application list.</p>
+        <h3>Access rules</h3>
+        <p><code>dashboard.data</code> is read-only to <code>base.group_user</code> - correct, since it is abstract and stores nothing. Personal models (saved filters, snoozes, presence, comments, snapshot links) grant full CRUD to <code>base.group_user</code>, with record-level <code>ir.rule</code> restricting each user to their own rows. <code>dashboard.approval.config</code> is readable by all and writable only by <code>group_dashboard_admin</code>.</p>
+        <h3>Menu-level restriction</h3>
+        <p>The Developer Manual menu carries <code>groups="base.group_system"</code>, so it is invisible to non-administrators. The User Manual menu has no group restriction.</p>
+        <div class="eagle-manual-warn">Menu visibility is not data security. It hides the entry; it does not stop a determined user from triggering the client action tag. Keep genuinely sensitive content out of the manual templates.</div>
+      </div>
+
+      <!-- ADD KPI -->
+      <div t-if="state.section === 'addkpi'">
+        <p class="eagle-manual-lead">Adding a KPI card touches four places, in this order.</p>
+        <ol class="eagle-manual-steps">
+          <li><b>Backend.</b> Add the figure to the relevant <code>get_*</code> method's return dict in <code>dashboard.py</code>, or add a new <code>@api.model</code> method if it is expensive and should load separately.</li>
+          <li><b>Component state.</b> Add the key to <code>useState</code> with a sensible zero value so the first render has something to show, and assign it where the payload is applied.</li>
+          <li><b>Template.</b> Add the card markup, reusing <code>eagle-kpi-card</code> plus a colour class such as <code>kpi-blue</code>. For a clickable card add the <code>clickable</code> class and a <code>_newTab(...)</code> handler.</li>
+          <li><b>Both manuals.</b> Describe the card in the User Manual and, if you added a method, list it in the RPC reference here.</li>
+        </ol>
+        <div class="eagle-manual-warn">Computed values belong in a JS getter, not in the template. The OWL expression parser rejects <code>??</code> and <code>Math.max(...arr)</code>. The existing <code>animOverdueCount</code> and <code>trendMax</code> getters exist for exactly this reason.</div>
+      </div>
+
+      <!-- CSS -->
+      <div t-if="state.section === 'css'">
+        <p>One stylesheet, <code>dashboard.css</code>, serves all five screens. Everything is scoped under <code>.eagle-app</code>, and dark mode is the <code>.dark</code> class on that same root.</p>
+        <pre class="eagle-manual-code">--eagle-accent    user-chosen accent, injected inline via themeStyle
+
+.eagle-app        root, owns the accent variable
+.eagle-header     sticky gradient header
+.eagle-body       scrolling region
+.eagle-kpi-grid   auto-fit grid, min 190px
+.eagle-kpi-card   + kpi-blue | kpi-green | kpi-red ...
+.eagle-manual-*   manual shell: wrap, side, navbtn, content, table, code</pre>
+        <p>The accent colour is applied as an inline custom property from the <code>themeStyle</code> getter rather than written into the stylesheet, so it can vary per user. Use <code>var(--eagle-accent)</code> in new rules instead of hardcoding the default blue.</p>
+        <p>Breakpoint is 768px. Check any new panel there before shipping - the dashboards are used on phones.</p>
+      </div>
+
+      <!-- GOTCHAS -->
+      <div t-if="state.section === 'gotchas'">
+        <p class="eagle-manual-lead">Each of these cost real debugging time. Read before writing templates, crons, mail or XML.</p>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Trap</th><th>Rule</th></tr></thead>
+          <tbody>
+            <tr><td>OWL expression parser</td><td>No <code>??</code>, no <code>Math.max(...spread)</code> in templates. Move the logic to a JS getter.</td></tr>
+            <tr><td>Legacy hash URLs</td><td>Odoo 18 no longer resolves <code>/web#model=...</code>. Use <code>/odoo/action-{id}</code>.</td></tr>
+            <tr><td><code>numbercall</code></td><td>Deprecated in Odoo 18 cron. Remove it from <code>ir.cron</code> records.</td></tr>
+            <tr><td>Mako in mail</td><td><code>${...}</code> is not rendered in 17/18 templates. Use f-strings with <code>mail.mail</code>.</td></tr>
+            <tr><td>Non-ASCII in XML</td><td>Needs a UTF-8 declaration and numeric HTML entities, not raw bytes.</td></tr>
+            <tr><td>Missing <code>@api.model</code></td><td>Required on every <code>get_*</code> and action method called from the frontend.</td></tr>
+            <tr><td>Unique-constraint races</td><td>The presence heartbeat can collide. Wrap in a savepoint with a fallback.</td></tr>
+            <tr><td>List views</td><td>Odoo 18 uses <code>&lt;list&gt;</code>, not <code>&lt;tree&gt;</code>. Use inline <code>invisible=</code> expressions.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- PERF -->
+      <div t-if="state.section === 'perf'">
+        <p class="eagle-manual-lead">Known and accepted, not bugs. Recorded so the next person does not rediscover them.</p>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Method</th><th>Issue</th><th>Fix when it matters</th></tr></thead>
+          <tbody>
+            <tr><td><code>get_reorder_predictions</code></td><td>N+1 queries - sales history fetched per product</td><td>One grouped <code>read_group</code> over all candidates, then compute in Python</td></tr>
+            <tr><td><code>get_streak</code></td><td>N+1 - iterates day by day with a query each</td><td>Single query grouped by day, then walk the result</td></tr>
+            <tr><td><code>get_vendor_scorecard</code></td><td>N+1 - per-vendor aggregates in a loop</td><td>Aggregate in one SQL pass keyed by partner</td></tr>
+          </tbody>
+        </table>
+        <p>All three are acceptable at current data volume. Revisit when product or vendor counts grow, or if dashboard load time becomes noticeable.</p>
+      </div>
+
+      <!-- DEPLOY -->
+      <div t-if="state.section === 'deploy'">
+        <h3>Versioning rule</h3>
+        <p>Every generated build bumps both the <code>version</code> in <code>__manifest__.py</code> and the version suffix in the zip filename, and the two must match:</p>
+        <pre class="eagle-manual-code">__manifest__.py  "version": "18.0.3.3"
+zip filename     eagle_business_dashboard18-0-3-3.zip</pre>
+        <p>Sequential zips are the recovery path - the development filesystem has been lost more than once, and the version chain is what made rollback possible. Keep every zip.</p>
+        <h3>Upgrade on the live instance</h3>
+        <ol class="eagle-manual-steps">
+          <li>Back up the database before anything else.</li>
+          <li>Unzip into the addons path, replacing the existing <code>eagle_business_dashboard</code> folder.</li>
+          <li>Delete stale <code>__pycache__</code> directories.</li>
+          <li>Restart the Odoo service.</li>
+          <li>Apps, remove the Apps filter, search the module, Upgrade.</li>
+          <li>Hard-refresh the browser so the asset bundle is rebuilt - a stale bundle looks exactly like broken JS.</li>
+        </ol>
+        <div class="eagle-manual-warn">A changed asset list in the manifest requires the upgrade, not just a restart. Symptoms of skipping it: new template not found, or a client action tag that does not resolve.</div>
+      </div>
+
+      <!-- CHECKLIST -->
+      <div t-if="state.section === 'checklist'">
+        <p class="eagle-manual-lead">Run through this before generating the zip. Prefer one comprehensive pass over several small iterations.</p>
+        <ol class="eagle-manual-steps">
+          <li>Manifest version bumped, zip filename suffix matches it.</li>
+          <li>Any new file added to the manifest <code>data</code> or <code>assets</code> list, in the right position.</li>
+          <li>New models have an <code>ir.model.access.csv</code> line.</li>
+          <li>New frontend-callable methods carry <code>@api.model</code>.</li>
+          <li>No <code>??</code> or spread in templates; computed values in getters.</li>
+          <li>New XML is ASCII, or declares UTF-8 and uses numeric entities.</li>
+          <li>New timers cleared in <code>onWillDestroy</code>.</li>
+          <li>New panel checked at the 768px breakpoint and in dark mode.</li>
+          <li><b>User Manual updated</b> for anything a user can see or click.</li>
+          <li><b>Developer Manual updated</b> for structure, models, RPC methods or gotchas.</li>
+          <li>Version string in both manual footers updated.</li>
+        </ol>
+      </div>
+
+      <div class="eagle-manual-foot">Advanced Business Dashboard - Developer Manual - version 18.0.3.4</div>
+    </div>
+  </div>
+</div>
+</t>
+</templates>

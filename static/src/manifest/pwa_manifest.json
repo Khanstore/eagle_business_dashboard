@@ -1,0 +1,11 @@
+{
+  "name": "Khan Store Dashboard",
+  "short_name": "Dashboard",
+  "start_url": "/odoo/action-eagle_business_dashboard.advanced_dashboard_action",
+  "display": "standalone",
+  "background_color": "#0f1420",
+  "theme_color": "#4f5bd5",
+  "icons": [
+    { "src": "/eagle_business_dashboard/static/description/icon.png", "sizes": "128x128", "type": "image/png" }
+  ]
+}

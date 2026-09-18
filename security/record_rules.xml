@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+
+    <!-- Saved filter presets: each user only sees/edits their own -->
+    <record id="rule_dashboard_saved_filter_own" model="ir.rule">
+      <field name="name">Dashboard Saved Filter: own records only</field>
+      <field name="model_id" ref="model_dashboard_saved_filter"/>
+      <field name="domain_force">[('user_id', '=', user.id)]</field>
+      <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <!-- Snapshot links: the public share page uses sudo() and bypasses
+         record rules entirely, so it's safe to fully restrict regular ORM
+         access to the creator. Dashboard Admins can see/manage all. -->
+    <record id="rule_dashboard_snapshot_link_own" model="ir.rule">
+      <field name="name">Dashboard Snapshot Link: own records only</field>
+      <field name="model_id" ref="model_dashboard_snapshot_link"/>
+      <field name="domain_force">[('created_by', '=', user.id)]</field>
+      <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+    <record id="rule_dashboard_snapshot_link_admin_all" model="ir.rule">
+      <field name="name">Dashboard Snapshot Link: admin sees all</field>
+      <field name="model_id" ref="model_dashboard_snapshot_link"/>
+      <field name="domain_force">[(1, '=', 1)]</field>
+      <field name="groups" eval="[(4, ref('group_dashboard_admin'))]"/>
+    </record>
+
+    <!-- Presence: everyone can read (needed for the "who's online" strip),
+         but a user may only write/unlink their own heartbeat row -->
+    <record id="rule_dashboard_presence_read_all" model="ir.rule">
+      <field name="name">Dashboard Presence: everyone can read</field>
+      <field name="model_id" ref="model_dashboard_presence"/>
+      <field name="domain_force">[(1, '=', 1)]</field>
+      <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+      <field name="perm_read" eval="True"/>
+      <field name="perm_write" eval="False"/>
+      <field name="perm_create" eval="False"/>
+      <field name="perm_unlink" eval="False"/>
+    </record>
+    <record id="rule_dashboard_presence_write_own" model="ir.rule">
+      <field name="name">Dashboard Presence: write/unlink own record only</field>
+      <field name="model_id" ref="model_dashboard_presence"/>
+      <field name="domain_force">[('user_id', '=', user.id)]</field>
+      <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+      <field name="perm_read" eval="False"/>
+      <field name="perm_write" eval="True"/>
+      <field name="perm_create" eval="True"/>
+      <field name="perm_unlink" eval="True"/>
+    </record>
+
+  </data>
+</odoo>

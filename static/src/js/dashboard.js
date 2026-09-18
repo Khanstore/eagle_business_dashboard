@@ -1,6 +1,6 @@
 /** @odoo-module **/
 import { registry } from "@web/core/registry";
-import { Component, onWillStart, onWillDestroy, useState } from "@odoo/owl";
+import { Component, onWillStart, onWillDestroy, onMounted, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
 
@@ -42,50 +42,76 @@ class Dashboard extends Component {
             selected_month:sharedFilterState.selected_month,
             selected_year:sharedFilterState.selected_year,
             partner_id_filter:'', partnerOptions:[],
+            includeChildContacts:false,
             sortKey:'', sortOrder:'asc',
             // Quick search
             quickSearch:'', showSearchResults:false,
             // Multi-period tab
             periodTab:'current',
             // Notes
-            teamNotes:'', notesSaved:false,
+            teamNotes:'', notesSaved:false, notesMentioned:null,
             // Print/export
             showPrintModal:false, printOrderLines:false, printPurchaseLines:false, printTxDetails:true,
             showExportPrompt:false, exportPromptType:'',
             // Target modal
             showTargetModal:false, targetInput:'',
             // Settings panel
-            showSettings:false, settingsDraft:{},
-            settingsSaved:false, approvalThresholds:{sale_threshold:0,purchase_threshold:0},
+            showSettings:false, settingsDraft:{}, settingsSaved:false,
+            approvalThresholds:{sale_threshold:0,purchase_threshold:0},
             // Auto-refresh
             autoRefresh:false, refreshMins:5,
-            // ── Batch 2 ──
-            darkMode:false,
-            showInsights:false, insightsLoaded:false,
-            cashForecast:{current_balance:0,forecast:[]},
-            reorderPredictions:[], seasonalHeatmap:[], anomalies:[],
-            auditTrail:[], duplicateInvoices:[], missingTaxPartners:[],
-            approvalQueue:{sales:[],purchases:[],sale_threshold:0,purchase_threshold:0},
-            vendorScorecard:[],
-            currencyRates:{base:'',rates:[]}, selectedCurrency:'',
-            savedFilters:[], showSaveFilterPrompt:false, filterNameInput:'',
-            digestEnabled:false,
-            showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSaleQty:1,
-            selectedInvoiceIds:[],
-            // ── Company branding + Low Stock UX ──
+            // Company branding + Low Stock UX
             companyName:'', companyId:0,
             lowStockExpanded:false,
             showSnoozeModal:false, snoozeProductId:0, snoozeProductName:'', snoozeWeeks:1,
+            // Batch 3: "make it attractive" pack
+            animCounters:{},
+            onlineUsers:[],
+            themeColor:'#4f5bd5',
+            notificationsEnabled:false,
+            showConfetti:false,
+            nlSummary:'',
+            bestWorstDay:{best:null,worst:null},
+            productBundles:[],
+            streak:0, dailyTarget:0,
+            showCommandPalette:false, commandQuery:'',
+            recentlyViewed:[],
+            showKpiComments:false, activeKpiKey:'', activeKpiLabel:'', kpiComments:[], newCommentText:'',
+            showShareModal:false, shareUrl:'',
+            savedFilters:[], showSaveFilterPrompt:false, filterNameInput:'',
+            showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSalePartnerSearch:'', quickSaleProductSearch:'', quickSaleQty:1,
+            validatingPaymentId:0,
+            productOptions:[], quickSaleError:'', quickSaleSubmitting:false, quickSaleLastResult:'',
         });
 
         this._orderLines    = {};
         this._purchaseLines = {};
         this._refreshTimer  = null;
+        this._heartbeatTimer = null;
+        this._prevOverdue = null;
+        this._prevLowStockLen = null;
+        this._confettiShown = false;
 
         try { this.state.darkMode = localStorage.getItem('eagle_dark_mode') === '1'; } catch(e) {}
+        try { this.state.recentlyViewed = JSON.parse(localStorage.getItem('eagle_recent_business') || '[]'); } catch(e) {}
 
-        onWillStart(async () => { await this.loadAll(); await this.loadSavedFilters(); });
-        onWillDestroy(() => this._stopRefresh());
+        onWillStart(async () => {
+            await this.loadAll();
+            await this.loadSavedFilters();
+            await this.loadAttractivePack();
+        });
+        onMounted(() => {
+            this._injectPwaManifest();
+            this._keydownHandler = (ev) => this._onKeyDown(ev);
+            window.addEventListener('keydown', this._keydownHandler);
+            this.heartbeatNow();
+            this._heartbeatTimer = setInterval(() => this.heartbeatNow(), 30000);
+        });
+        onWillDestroy(() => {
+            this._stopRefresh();
+            if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
+            if (this._keydownHandler) window.removeEventListener('keydown', this._keydownHandler);
+        });
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -164,16 +190,62 @@ class Dashboard extends Component {
                 .forEach(r=>{if(r.partner_id&&r.partner) pm[r.partner_id]=r.partner;});
             this.state.partnerOptions=Object.entries(pm).map(([id,name])=>({id:String(id),name})).sort((a,b)=>a.name.localeCompare(b.name));
             if(this.state.sortKey) this._applySort();
+
+            // Animated counters
+            this._animateValue('overdue_count', widgets.overdue_count||0);
+            this._animateValue('due_soon_count', widgets.due_soon_count||0);
+            this._animateValue('month_sales', Math.round(widgets.month_sales||0));
+
+            // Push notification checks
+            this._checkPushAlerts(widgets);
         } catch(e) { console.error("Dashboard load error:",e); }
     }
 
-    // ── Partner filter ────────────────────────────────────────────────────
-    _ok(r){const q=this.state.partner_filter.trim().toLowerCase(),pid=this.state.partner_id_filter;return(!q||(r.partner||'').toLowerCase().includes(q))&&(!pid||String(r.partner_id)===pid);}
-    get filteredOrders()       {return this.state.orders.filter(r=>this._ok(r));}
-    get filteredPurchases()    {return this.state.purchases.filter(r=>this._ok(r));}
-    get filteredQuotations()   {return this.state.quotations.filter(r=>this._ok(r));}
-    get filteredRfq()          {return this.state.rfq.filter(r=>this._ok(r));}
-    get filteredTransactions() {return this.state.transactions.filter(r=>this._ok(r));}
+    // ── Load the lighter "attractive pack" widgets in parallel ─────────────
+    async loadAttractivePack() {
+        try {
+            const [nl, bw, bundles, streak, theme, online] = await Promise.all([
+                this.orm.call("dashboard.data","get_nl_summary",[]),
+                this.orm.call("dashboard.data","get_best_worst_day",[this.state.from_date||false,this.state.to_date||false]),
+                this.orm.call("dashboard.data","get_product_bundles",[]),
+                this.orm.call("dashboard.data","get_streak",[]),
+                this.orm.call("dashboard.data","get_theme_color",[]),
+                this.orm.call("dashboard.data","get_online_users",[]),
+            ]);
+            this.state.nlSummary = nl || '';
+            this.state.bestWorstDay = bw || {best:null,worst:null};
+            this.state.productBundles = bundles || [];
+            this.state.streak = streak ? streak.streak : 0;
+            this.state.dailyTarget = streak ? streak.daily_target : 0;
+            this.state.themeColor = theme || '#4f5bd5';
+            this.state.onlineUsers = online || [];
+            if (this.targetPct >= 100 && !this._confettiShown) {
+                this._confettiShown = true;
+                this._fireConfetti();
+            }
+        } catch(e) { console.error("Attractive pack load error:", e); }
+    }
+
+    // ── Partner filter (with hierarchy: parent/child) ───────────────────────
+    _ok(r) {
+        const q=this.state.partner_filter.trim().toLowerCase(), pid=this.state.partner_id_filter;
+        let nameOk;
+        if (!q) {
+            nameOk = true;
+        } else if (this.state.includeChildContacts) {
+            nameOk = (r.partner||'').toLowerCase().includes(q) || (r.partner_parent||'').toLowerCase().includes(q);
+        } else {
+            nameOk = (r.partner||'').toLowerCase().includes(q);
+        }
+        const idOk = !pid || String(r.partner_id)===pid;
+        return nameOk && idOk;
+    }
+    toggleIncludeChildContacts() { this.state.includeChildContacts = !this.state.includeChildContacts; }
+    get filteredOrders()       { return this.state.orders.filter(r=>this._ok(r)); }
+    get filteredPurchases()    { return this.state.purchases.filter(r=>this._ok(r)); }
+    get filteredQuotations()   { return this.state.quotations.filter(r=>this._ok(r)); }
+    get filteredRfq()          { return this.state.rfq.filter(r=>this._ok(r)); }
+    get filteredTransactions() { return this.state.transactions.filter(r=>this._ok(r)); }
 
     // ── Quick search ──────────────────────────────────────────────────────
     onQuickSearch(ev) {
@@ -206,31 +278,22 @@ class Dashboard extends Component {
     get txTotalReceived(){return this._sum(this.filteredTransactions,'received');}
     get txTotalPaid()    {return this._sum(this.filteredTransactions,'paid');}
 
-    // ── Sales target ──────────────────────────────────────────────────────
-    get targetPct(){if(!this.state.sales_target)return 0;return Math.min(100,Math.round(this.state.month_sales/this.state.sales_target*100));}
+    // ── Animated counter display values (fallback logic kept in JS since
+    //    OWL's template expression parser doesn't support '??') ──
+    get animOverdueCount()  { return this.state.animCounters.overdue_count !== undefined ? this.state.animCounters.overdue_count : this.state.overdue_count; }
+    get animDueSoonCount()  { return this.state.animCounters.due_soon_count !== undefined ? this.state.animCounters.due_soon_count : this.state.due_soon_count; }
+    get animMonthSales()    { return this.state.animCounters.month_sales !== undefined ? this.state.animCounters.month_sales : Math.round(this.state.month_sales); }
 
-    // ── Trend chart SVG ───────────────────────────────────────────────────
-    get chartBars() {
-        const data = this.state.trend_data || [];
-        if (!data.length) return [];
-        const W=380, H=120, pad=4;
-        const maxVal = Math.max(...data.map(d=>d.amount), 1);
-        const bw = Math.max(4, (W - pad*2) / data.length - 2);
-        return data.map((d,i) => {
-            const h  = Math.max(2, (d.amount/maxVal)*(H-20));
-            const x  = pad + i * ((W-pad*2)/data.length) + ((W-pad*2)/data.length - bw)/2;
-            return { x, y:H-h, w:bw, h, label:d.date.slice(5), val:d.amount, date:d.date };
-        });
+    // ── Trend chart max (kept in JS since OWL doesn't support spread syntax) ──
+    get trendMax() {
+        const vals = this.state.trend_data.map(d => d.amount);
+        return vals.length ? Math.max.apply(null, vals.concat([1])) : 1;
     }
-    get chartMaxVal() { const d=this.state.trend_data||[]; return d.length?Math.max(...d.map(r=>r.amount),1):1; }
-    get chartTotal()  { return (this.state.trend_data||[]).reduce((s,r)=>s+r.amount,0).toFixed(2); }
 
-    // ── Multi-period ──────────────────────────────────────────────────────
-    get multiPeriodVal() {
-        const f=this.state.financial;
-        if(this.state.periodTab==='previous') return f.previous_sales||0;
-        if(this.state.periodTab==='lastyear') return f.last_year_sales||0;
-        return f.current_sales||0;
+    // ── Sales target progress ─────────────────────────────────────────────
+    get targetPct() {
+        if (!this.state.sales_target) return 0;
+        return Math.min(100, Math.round((this.state.month_sales / this.state.sales_target) * 100));
     }
     get multiPeriodVsPrev() {
         const f=this.state.financial,cur=f.current_sales||0,prv=f.previous_sales||0;
@@ -245,19 +308,20 @@ class Dashboard extends Component {
     _startRefresh(){this._stopRefresh();this._refreshTimer=setInterval(()=>this.loadAll(),this.state.refreshMins*60000);}
     _stopRefresh(){if(this._refreshTimer){clearInterval(this._refreshTimer);this._refreshTimer=null;}}
 
-    // ── Team notes ────────────────────────────────────────────────────────
+    // ── Team notes (with @mention notifications) ───────────────────────────
     async saveNotes() {
-        await this.orm.call("dashboard.data","save_team_notes",[this.state.teamNotes]);
+        const res = await this.orm.call("dashboard.data","save_team_notes_with_mentions",[this.state.teamNotes]);
         this.state.notesSaved=true;
-        setTimeout(()=>{this.state.notesSaved=false;},2500);
+        if (res && res.notified && res.notified.length) {
+            this.state.notesMentioned = res.notified;
+        }
+        setTimeout(()=>{this.state.notesSaved=false; this.state.notesMentioned=null;},3000);
     }
 
     // ── Settings ─────────────────────────────────────────────────────────
     openSettings() {
-        // Deep copy current visibility for each role
         const ad = this.state.all_defaults;
         this.state.settingsDraft = JSON.parse(JSON.stringify(ad));
-        // Overlay stored values
         try {
             const stored = this.state._storedConfig;
             if(stored) Object.keys(stored).forEach(role=>{ if(this.state.settingsDraft[role]) Object.assign(this.state.settingsDraft[role],stored[role]); });
@@ -274,6 +338,7 @@ class Dashboard extends Component {
         await this.orm.call("dashboard.approval.config","set_config",
             [this.state.approvalThresholds.sale_threshold||0, this.state.approvalThresholds.purchase_threshold||0])
             .catch(()=>{});
+        await this.saveThemeColor().catch(()=>{});
         this.state.settingsSaved=true;
         setTimeout(()=>{this.state.settingsSaved=false;this.state.showSettings=false;this.loadAll();},1200);
     }
@@ -302,7 +367,20 @@ class Dashboard extends Component {
             const row={'Row Type':'RECORD','Reference':r.name,'Partner':r.partner,'Date':r.date,'Status':r.status,'Amount':fmt(r.amount),'Product':'','Qty':'','UoM':'','Rate':'','Discount%':'','Tax':'','Line Total':''};
             if(d.extraCol) row[d.extraCol]=r[d.extraField]||'';
             csvRows.push(row);
-            if(includeLines){const lines=d.lineCache[r.id]||[];for(const l of lines){const lr={'Row Type':'LINE','Reference':r.name,'Partner':'','Date':'','Status':'','Amount':'','Product':l.product||'','Qty':fmt(l.qty),'UoM':l.uom||'','Rate':fmt(l.price_unit),'Discount%':fmt(l.discount),'Tax':l.tax||'','Line Total':fmt(l.subtotal)};if(d.extraCol)lr[d.extraCol]='';csvRows.push(lr);}if(lines.length){const lt=lines.reduce((s,l)=>s+(parseFloat(l.subtotal)||0),0);const sr={'Row Type':'SUBTOTAL','Reference':r.name,'Partner':'','Date':'','Status':`${lines.length} line(s)`,'Amount':fmt(r.amount),'Product':'','Qty':'','UoM':'','Rate':'','Discount%':'','Tax':'','Line Total':fmt(lt)};if(d.extraCol)sr[d.extraCol]='';csvRows.push(sr);}}
+            if(includeLines){
+                const lines=d.lineCache[r.id]||[];
+                for(const l of lines){
+                    const lr={'Row Type':'LINE','Reference':r.name,'Partner':'','Date':'','Status':'','Amount':'','Product':l.product||'','Qty':fmt(l.qty),'UoM':l.uom||'','Rate':fmt(l.price_unit),'Discount%':fmt(l.discount),'Tax':l.tax||'','Line Total':fmt(l.subtotal)};
+                    if(d.extraCol)lr[d.extraCol]='';
+                    csvRows.push(lr);
+                }
+                if(lines.length){
+                    const lt=lines.reduce((s,l)=>s+(parseFloat(l.subtotal)||0),0);
+                    const sr={'Row Type':'SUBTOTAL','Reference':r.name,'Partner':'','Date':'','Status':`${lines.length} line(s)`,'Amount':fmt(r.amount),'Product':'','Qty':'','UoM':'','Rate':'','Discount%':'','Tax':'','Line Total':fmt(lt)};
+                    if(d.extraCol)sr[d.extraCol]='';
+                    csvRows.push(sr);
+                }
+            }
         }
         this._writeCSV(csvRows,d.file);
     }
@@ -326,7 +404,7 @@ class Dashboard extends Component {
         const txCols=[{label:'Reference',val:r=>r.name},{label:'Partner',val:r=>r.partner},{label:'Date',val:r=>r.date},{label:'Ledger',val:r=>r.ledger},{label:'Received',val:r=>fmt(r.received)},{label:'Paid',val:r=>fmt(r.paid)},{label:'Status',val:r=>r.state}];
         const pw=window.open('','_blank','width=1200,height=800');
         pw.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Business Dashboard</title>${styles}<style>body{margin:0;padding:20px;font-family:sans-serif}h1{font-size:20px;color:#1a1f36;margin:0 0 4px}h2{font-size:14px;font-weight:700;color:#1a1f36;margin:20px 0 8px;padding-bottom:4px;border-bottom:2px solid #1a1f36}.period{font-size:11px;color:#6b7280;margin-bottom:16px}@media print{@page{margin:10mm;size:A4 landscape}body{font-size:10px;padding:0}}</style></head><body>
-        <h1>Business Dashboard – Khan Store</h1><div class="period">Period: ${this.state.from_date||'All'} — ${this.state.to_date||'All'}</div>
+        <h1>Business Dashboard</h1><div class="period">Period: ${this.state.from_date||'All'} — ${this.state.to_date||'All'}</div>
         <h2>Orders (${orders.length})</h2>${buildTable(orders,ordCols,incOrd)}
         <h2>Purchase (${purchases.length})</h2>${buildTable(purchases,purCols,incPur)}
         <h2>Quotations (${quotations.length})</h2>${buildTable(quotations,ordCols.filter(c=>c.label!=='Inv.Status'),incOrd)}
@@ -351,13 +429,11 @@ class Dashboard extends Component {
     openOverdueInvoices(){this._newTab('account.move',[["move_type","=","out_invoice"],["state","=","posted"],["payment_state","not in",["paid","in_payment"]],["invoice_date_due","<",this._today()]],'Overdue Invoices');}
     openDueSoonInvoices(){const d7=new Date();d7.setDate(d7.getDate()+7);this._newTab('account.move',[["move_type","=","out_invoice"],["state","=","posted"],["payment_state","not in",["paid","in_payment"]],["invoice_date_due",">=",this._today()],["invoice_date_due","<=",d7.toISOString().split('T')[0]]],'Invoices Due in 7 Days');}
     openMonthSales(){this._newTab('sale.order',[["state","=","sale"],["date_order",">=",this._firstOfMonth()],["date_order","<=",this._today()]],"This Month's Orders");}
-    openProduct(id){this._openTab('product.product',id);}
     openLowStockList(){this._newTab('product.product',[["type","=","consu"],["qty_available","<=",5],["active","=",true]],'Low Stock Products');}
+    openProduct(id){this._openTab('product.product',id);}
 
-    // ── Low stock fold/expand ──────────────────────────────────────────────
+    // ── Low stock fold + snooze ──────────────────────────────────────────
     toggleLowStock() { this.state.lowStockExpanded = !this.state.lowStockExpanded; }
-
-    // ── Snooze (temporarily hide) low stock product ────────────────────────
     openSnoozeModal(product, ev) {
         if (ev) ev.stopPropagation();
         this.state.snoozeProductId = product.id;
@@ -367,98 +443,197 @@ class Dashboard extends Component {
     }
     closeSnoozeModal() { this.state.showSnoozeModal = false; }
     async confirmSnooze() {
-        await this.orm.call("dashboard.data","snooze_low_stock_product",
-            [this.state.snoozeProductId, this.state.snoozeWeeks || 1]);
+        await this.orm.call("dashboard.data","snooze_low_stock_product",[this.state.snoozeProductId, this.state.snoozeWeeks]);
         this.state.showSnoozeModal = false;
         await this.loadAll();
     }
 
-    // ══════════ BATCH 2 FEATURES ══════════
+    // ══════════ BATCH 3: "MAKE IT ATTRACTIVE" PACK ══════════
 
-    // ── Dark mode ────────────────────────────────────────────────────────
-    toggleDarkMode() {
-        this.state.darkMode = !this.state.darkMode;
-        try { localStorage.setItem('eagle_dark_mode', this.state.darkMode ? '1' : '0'); } catch(e) {}
+    // ── Animated number counters ────────────────────────────────────────
+    _animateValue(key, target, duration=700) {
+        const start = this.state.animCounters[key] || 0;
+        if (start === target) { this.state.animCounters[key] = target; return; }
+        const startTime = performance.now();
+        const step = (now) => {
+            const progress = Math.min((now-startTime)/duration, 1);
+            const eased = 1 - Math.pow(1-progress, 3);
+            this.state.animCounters[key] = Math.round(start + (target-start)*eased);
+            if (progress < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
     }
 
-    // ── Insights panel (lazy load) ──────────────────────────────────────
-    async toggleInsights() {
-        this.state.showInsights = !this.state.showInsights;
-        if (this.state.showInsights && !this.state.insightsLoaded) {
-            await this.loadInsights();
+    // ── Confetti burst (target hit 100%) ────────────────────────────────
+    _fireConfetti() {
+        this.state.showConfetti = true;
+        setTimeout(() => { this.state.showConfetti = false; }, 3000);
+    }
+    get confettiPieces() {
+        const colors = ['#4f5bd5','#7c3aed','#10b981','#f59e0b','#ef4444','#3b82f6'];
+        return Array.from({length: 40}, (_, i) => ({
+            id: i, left: Math.random()*100, delay: Math.random()*0.6,
+            color: colors[i % colors.length], duration: 2 + Math.random()*1.5,
+        }));
+    }
+
+    // ── Live presence ────────────────────────────────────────────────────
+    async heartbeatNow() {
+        try {
+            await this.orm.call("dashboard.data","heartbeat",[]);
+            this.state.onlineUsers = await this.orm.call("dashboard.data","get_online_users",[]);
+        } catch(e) { /* silent */ }
+    }
+
+    // ── Theme color ───────────────────────────────────────────────────────
+    get themeStyle() { return `--eagle-accent:${this.state.themeColor};`; }
+    onThemeColorChange(ev) { this.state.themeColor = ev.target.value; }
+    async saveThemeColor() {
+        await this.orm.call("dashboard.data","save_theme_color",[this.state.themeColor]);
+    }
+
+    // ── PWA manifest injection ──────────────────────────────────────────
+    _injectPwaManifest() {
+        try {
+            if (!document.querySelector('link[rel="manifest"][data-eagle="1"]')) {
+                const link = document.createElement('link');
+                link.rel = 'manifest'; link.dataset.eagle = '1';
+                link.href = '/eagle_business_dashboard/static/src/manifest/pwa_manifest.json';
+                document.head.appendChild(link);
+            }
+            if (!document.querySelector('meta[name="theme-color"][data-eagle="1"]')) {
+                const meta = document.createElement('meta');
+                meta.name = 'theme-color'; meta.content = '#4f5bd5'; meta.dataset.eagle = '1';
+                document.head.appendChild(meta);
+            }
+        } catch(e) { /* silent */ }
+    }
+
+    // ── Push notifications ───────────────────────────────────────────────
+    async toggleNotifications() {
+        if (!("Notification" in window)) return;
+        if (Notification.permission === 'granted') {
+            this.state.notificationsEnabled = !this.state.notificationsEnabled;
+            return;
+        }
+        const perm = await Notification.requestPermission();
+        this.state.notificationsEnabled = (perm === 'granted');
+    }
+    _checkPushAlerts(widgets) {
+        if (!this.state.notificationsEnabled || !("Notification" in window) || Notification.permission !== 'granted') {
+            this._prevOverdue = widgets.overdue_count; this._prevLowStockLen = (widgets.low_stock||[]).length;
+            return;
+        }
+        if (this._prevOverdue !== null && widgets.overdue_count > this._prevOverdue) {
+            new Notification('Dashboard Alert', { body: `Overdue invoices increased to ${widgets.overdue_count}` });
+        }
+        if (this._prevLowStockLen !== null && (widgets.low_stock||[]).length > this._prevLowStockLen) {
+            new Notification('Dashboard Alert', { body: `A new product just hit low stock` });
+        }
+        this._prevOverdue = widgets.overdue_count;
+        this._prevLowStockLen = (widgets.low_stock||[]).length;
+    }
+
+    // ── Comments on KPI cards ────────────────────────────────────────────
+    async openKpiComments(key, label) {
+        this.state.activeKpiKey = key; this.state.activeKpiLabel = label;
+        this.state.newCommentText = '';
+        this.state.showKpiComments = true;
+        this.state.kpiComments = await this.orm.call("dashboard.data","get_kpi_comments",[key]);
+    }
+    closeKpiComments() { this.state.showKpiComments = false; }
+    onKpiCommentKeydown(ev) {
+        if (ev.key === "Enter") {
+            ev.preventDefault();
+            this.addKpiComment();
         }
     }
-    async loadInsights() {
-        try {
-            const [forecast, reorder, heatmap, anomalies, audit, digest, approvals, vendors] = await Promise.all([
-                this.orm.call("dashboard.data","get_cash_forecast",[]),
-                this.orm.call("dashboard.data","get_reorder_predictions",[]),
-                this.orm.call("dashboard.data","get_seasonal_heatmap",[]),
-                this.orm.call("dashboard.data","get_anomalies",[]),
-                this.orm.call("dashboard.data","get_audit_trail",[15]),
-                this.orm.call("dashboard.data","get_digest_status",[]),
-                this.orm.call("dashboard.data","get_approval_queue",[]),
-                this.orm.call("dashboard.data","get_vendor_scorecard",[]),
-            ]);
-            Object.assign(this.state, {
-                cashForecast: forecast||{current_balance:0,forecast:[]},
-                reorderPredictions: reorder||[],
-                seasonalHeatmap: heatmap||[],
-                anomalies: anomalies||[],
-                auditTrail: audit||[],
-                digestEnabled: digest ? digest.enabled : false,
-                approvalQueue: approvals||{sales:[],purchases:[],sale_threshold:0,purchase_threshold:0},
-                vendorScorecard: vendors||[],
-                insightsLoaded: true,
-            });
-        } catch(e) { console.error("Insights load error:", e); }
-    }
-    async toggleDigest() {
-        this.state.digestEnabled = !this.state.digestEnabled;
-        await this.orm.call("dashboard.data","toggle_daily_digest",[this.state.digestEnabled]);
+    async addKpiComment() {
+        if (!this.state.newCommentText.trim()) return;
+        await this.orm.call("dashboard.data","add_kpi_comment",[this.state.activeKpiKey, this.state.newCommentText]);
+        this.state.newCommentText = '';
+        this.state.kpiComments = await this.orm.call("dashboard.data","get_kpi_comments",[this.state.activeKpiKey]);
     }
 
-    // ── Cash forecast chart points ──────────────────────────────────────
-    get forecastPoints() {
-        const data = this.state.cashForecast.forecast || [];
-        if (!data.length) return '';
-        const W=380,H=90; const vals=data.map(d=>d.balance);
-        const minV=Math.min(...vals,0), maxV=Math.max(...vals,1);
-        const range = (maxV-minV) || 1;
-        return data.map((d,i) => {
-            const x = (i/(data.length-1))*W;
-            const y = H - ((d.balance-minV)/range)*H;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
+    // ── Shareable snapshot link ──────────────────────────────────────────
+    async openShareModal() {
+        const snapshot = {
+            'Overdue Invoices': `${this.state.overdue_count} (BDT ${this.state.overdue_amount.toFixed(2)})`,
+            'Due in 7 Days': `${this.state.due_soon_count} (BDT ${this.state.due_soon_amount.toFixed(2)})`,
+            'Month Sales': `BDT ${this.state.month_sales.toFixed(2)}`,
+            'Monthly Target': `${this.targetPct}%`,
+        };
+        const res = await this.orm.call("dashboard.data","create_snapshot_link",[snapshot, 48]);
+        this.state.shareUrl = res.url;
+        this.state.showShareModal = true;
     }
-    get forecastZeroY() {
-        const data = this.state.cashForecast.forecast || [];
-        if (!data.length) return 45;
-        const vals=data.map(d=>d.balance);
-        const minV=Math.min(...vals,0), maxV=Math.max(...vals,1);
-        const range=(maxV-minV)||1;
-        return 90 - ((0-minV)/range)*90;
+    closeShareModal() { this.state.showShareModal = false; }
+    copyShareUrl() { try { navigator.clipboard.writeText(this.state.shareUrl); } catch(e) {} }
+
+    // ── Command palette (Ctrl+K) ─────────────────────────────────────────
+    _onKeyDown(ev) {
+        const tag = (ev.target.tagName || '').toLowerCase();
+        const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || ev.target.isContentEditable;
+
+        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+            ev.preventDefault();
+            this.state.showCommandPalette = true;
+            this.state.commandQuery = '';
+            return;
+        }
+        if (ev.key === 'Escape' && this.state.showCommandPalette) {
+            this.state.showCommandPalette = false; return;
+        }
+        if (typing || this.state.showCommandPalette) return;
+
+        const k = ev.key.toLowerCase();
+        if (k === 'r') this.createPayment('inbound');
+        else if (k === 'p') this.createPayment('outbound');
+        else if (k === 'n') this.createOrder();
+        else if (k === 'f') this.goToFinanceDashboard();
+        else if (k === 'o') this.goToOperationsDashboard();
+        else if (k === 'd') this.toggleDarkMode();
+    }
+    closeCommandPalette() { this.state.showCommandPalette = false; }
+    onCommandQueryChange(ev) { this.state.commandQuery = ev.target.value; }
+    get commandActions() {
+        const all = [
+            {label:'New Order', icon:'fa-plus-circle', run:()=>this.createOrder()},
+            {label:'New Purchase', icon:'fa-shopping-bag', run:()=>this.createPurchase()},
+            {label:'Receive Payment', icon:'fa-arrow-down', run:()=>this.createPayment('inbound')},
+            {label:'Make Payment', icon:'fa-arrow-up', run:()=>this.createPayment('outbound')},
+            {label:'Go to Finance Dashboard', icon:'fa-line-chart', run:()=>this.goToFinanceDashboard()},
+            {label:'Go to Operations Dashboard', icon:'fa-truck', run:()=>this.goToOperationsDashboard()},
+            {label:'Toggle Dark Mode', icon:'fa-moon-o', run:()=>this.toggleDarkMode()},
+            {label:'Print Dashboard', icon:'fa-print', run:()=>this.openPrintModal()},
+            {label:'Share Snapshot', icon:'fa-share-alt', run:()=>this.openShareModal()},
+        ];
+        const q = this.state.commandQuery.trim().toLowerCase();
+        return q ? all.filter(a => a.label.toLowerCase().includes(q)) : all;
+    }
+    runCommand(action) { this.state.showCommandPalette = false; action.run(); }
+
+    // ── Recently viewed ──────────────────────────────────────────────────
+    _pushRecentlyViewed(type, id, label) {
+        let list = this.state.recentlyViewed.filter(r => !(r.type===type && r.id===id));
+        list.unshift({type, id, label});
+        list = list.slice(0, 5);
+        this.state.recentlyViewed = list;
+        try { localStorage.setItem('eagle_recent_business', JSON.stringify(list)); } catch(e) {}
+    }
+    openRecent(r) {
+        if (r.type==='order') this.openOrder(r.id);
+        else if (r.type==='purchase') this.openPurchase(r.id);
+        else if (r.type==='partner') this.openPartner(r.id);
+        else if (r.type==='transaction') this.openTransaction(r.id);
     }
 
-    // ── Approval queue ────────────────────────────────────────────────────
-    async loadApprovalQueue() {
-        try { this.state.approvalQueue = await this.orm.call("dashboard.data","get_approval_queue",[]); }
-        catch(e) { console.error(e); }
-    }
-    async approveSaleOrder(id) { await this.orm.call("dashboard.data","approve_sale_order",[id]); await this.loadApprovalQueue(); await this.loadAll(); }
-
-    // ── Currency switcher ─────────────────────────────────────────────────
-    async loadCurrencyRates() {
-        try {
-            this.state.currencyRates = await this.orm.call("dashboard.data","get_currency_rates",[]);
-        } catch(e) { console.error(e); }
-    }
-    onCurrencyChange(ev) { this.state.selectedCurrency = ev.target.value; }
-    convertAmount(amount) {
-        if (!this.state.selectedCurrency) return amount;
-        const r = (this.state.currencyRates.rates||[]).find(x=>x.code===this.state.selectedCurrency);
-        return r ? (amount * r.rate) : amount;
-    }
+    // ── Navigation ────────────────────────────────────────────────────────
+    _openTab(model,id){const t=window.open(`/web#model=${model}&id=${id}&view_type=form`,'_blank');if(t)t.focus();}
+    openOrder(id)      {this._openTab('sale.order',id); const r=this.state.orders.find(o=>o.id===id)||this.state.quotations.find(o=>o.id===id); this._pushRecentlyViewed('order',id,r?r.name:`Order #${id}`);}
+    openPurchase(id)   {this._openTab('purchase.order',id); const r=this.state.purchases.find(o=>o.id===id)||this.state.rfq.find(o=>o.id===id); this._pushRecentlyViewed('purchase',id,r?r.name:`Purchase #${id}`);}
+    goToFinanceDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.finance_dashboard_action");}
+    goToOperationsDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.operations_dashboard_action");}
 
     // ── Saved filter presets ──────────────────────────────────────────────
     async loadSavedFilters() {
@@ -486,36 +661,83 @@ class Dashboard extends Component {
         await this.loadSavedFilters();
     }
 
-    // ── Quick Sale (barcode/POS style) ──────────────────────────────────
-    openQuickSale() { this.state.quickSalePartner=''; this.state.quickSaleProduct=''; this.state.quickSaleQty=1; this.state.showQuickSale=true; }
+    // ── Quick Sale ────────────────────────────────────────────────────────
+    async openQuickSale() {
+        this.state.quickSalePartner=''; this.state.quickSaleProduct='';
+        this.state.quickSalePartnerSearch=''; this.state.quickSaleProductSearch='';
+        this.state.quickSaleQty=1;
+        this.state.quickSaleError=''; this.state.quickSaleSubmitting=false;
+        this.state.showQuickSale=true;
+        try {
+            this.state.productOptions = await this.orm.call("dashboard.data","get_product_options",[]);
+        } catch(e) {
+            console.error("Failed to load products:", e);
+            this.state.productOptions = [];
+            this.state.quickSaleError = 'Could not load products. Please try again.';
+        }
+    }
     closeQuickSale() { this.state.showQuickSale=false; }
+
+    onQuickSalePartnerInput(ev) {
+        const value = (ev.target.value || '').trim();
+        this.state.quickSalePartnerSearch = value;
+        const match = value.match(/\[#(\d+)\]\s*$/);
+        this.state.quickSalePartner = match ? match[1] : '';
+        if (value === '— Walk-in customer —') this.state.quickSalePartner = '';
+    }
+
+    onQuickSaleProductInput(ev) {
+        const value = (ev.target.value || '').trim();
+        this.state.quickSaleProductSearch = value;
+        const match = value.match(/\[#(\d+)\]\s*$/);
+        this.state.quickSaleProduct = match ? match[1] : '';
+    }
+
     async submitQuickSale() {
-        if (!this.state.quickSaleProduct) return;
-        const partnerId = this.state.quickSalePartner ? parseInt(this.state.quickSalePartner) : false;
-        const productId = parseInt(this.state.quickSaleProduct);
-        const res = await this.orm.call("dashboard.data","create_quick_sale",
-            [partnerId, productId, this.state.quickSaleQty || 1, false]);
-        this.state.showQuickSale=false;
-        if (res && res.id) { this._openTab('sale.order', res.id); await this.loadAll(); }
+        this.state.quickSaleError = '';
+        if (!this.state.quickSaleProduct) {
+            this.state.quickSaleError = 'Please select a product.';
+            return;
+        }
+        const qty = parseFloat(this.state.quickSaleQty);
+        if (!qty || qty <= 0) {
+            this.state.quickSaleError = 'Quantity must be greater than 0.';
+            return;
+        }
+        this.state.quickSaleSubmitting = true;
+        try {
+            const partnerId = this.state.quickSalePartner ? parseInt(this.state.quickSalePartner) : false;
+            const productId = parseInt(this.state.quickSaleProduct);
+            const res = await this.orm.call("dashboard.data","create_quick_sale",
+                [partnerId, productId, qty, false]);
+            if (res && res.error) {
+                this.state.quickSaleError = res.error;
+                return;
+            }
+            if (res && res.id) {
+                this.state.showQuickSale = false;
+                this.state.quickSaleLastResult = res.merged
+                    ? `Added to existing draft order ${res.name}.`
+                    : `Created new order ${res.name}.`;
+                this._openTab('sale.order', res.id);
+                await this.loadAll();
+                setTimeout(()=>{ this.state.quickSaleLastResult = ''; }, 5000);
+            } else {
+                this.state.quickSaleError = 'Something went wrong creating the order. Please try again.';
+            }
+        } catch(e) {
+            console.error("Quick sale failed:", e);
+            this.state.quickSaleError = 'Server error while creating the order.';
+        } finally {
+            this.state.quickSaleSubmitting = false;
+        }
     }
 
-    // ── Vendor scorecard (lazy) ───────────────────────────────────────────
-    async loadVendorScorecard() {
-        try { this.state.vendorScorecard = await this.orm.call("dashboard.data","get_vendor_scorecard",[]); }
-        catch(e) { console.error(e); }
+    // ── Dark mode ─────────────────────────────────────────────────────────
+    toggleDarkMode() {
+        this.state.darkMode = !this.state.darkMode;
+        try { localStorage.setItem('eagle_dark_mode', this.state.darkMode ? '1' : '0'); } catch(e) {}
     }
-
-    // ── Navigation ────────────────────────────────────────────────────────
-    _openTab(model,id){const t=window.open(`/web#model=${model}&id=${id}&view_type=form`,'_blank');if(t)t.focus();}
-    openOrder(id)      {this._openTab('sale.order',id);}
-    openPurchase(id)   {this._openTab('purchase.order',id);}
-    openTransaction(id){this._openTab('account.payment',id);}
-    openPartner(id)    {this._openTab('res.partner',id);}
-    createOrder()      {const t=window.open('/web#model=sale.order&view_type=form','_blank');if(t)t.focus();}
-    createPurchase()   {const t=window.open('/web#model=purchase.order&view_type=form','_blank');if(t)t.focus();}
-    createPayment(type){const pt=type==='inbound'?'customer':'supplier';const t=window.open(`/web#model=account.payment&view_type=form&default_payment_type=${type}&default_partner_type=${pt}`,'_blank');if(t)t.focus();}
-    goToFinanceDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.finance_dashboard_action");}
-    goToOperationsDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.operations_dashboard_action");}
 }
 
 Dashboard.template = "advanced_business_dashboard.dashboard";

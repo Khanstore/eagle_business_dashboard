@@ -1,13 +1,14 @@
 {
     "name": "Advanced Business Dashboard",
-    "version": "18.0.2.6",
+    "version": "18.0.3.4",
     "author": "SM Ashraf",
-    "depends": ["sale", "purchase", "account", "web", "stock"],
+    "depends": ["sale", "purchase", "account", "web", "stock", "mail"],
     "data": [
         "security/groups.xml",
         "security/ir.model.access.csv",
         "data/cron.xml",
         "views/menu.xml",
+        "views/snapshot_templates.xml",
     ],
     "assets": {
         "web.assets_backend": [
@@ -22,6 +23,6 @@
         ]
     },
     "installable": True,
-    "licence": "LGPL-3",
+    "license": "LGPL-3",
     "application": True
 }

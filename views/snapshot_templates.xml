@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <template id="snapshot_view" name="Dashboard Snapshot">
+    <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>Dashboard Snapshot</title>
+        <style>
+          body { font-family: -apple-system, 'Segoe UI', sans-serif; background:#0f1420; color:#e5e7eb; margin:0; padding:32px 16px; }
+          .wrap { max-width:720px; margin:0 auto; }
+          h1 { font-size:22px; margin:0 0 4px; color:#fff; }
+          .meta { color:#9ca3af; font-size:12px; margin-bottom:24px; }
+          .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; }
+          .card { background:#1a2035; border-radius:12px; padding:16px; border-left:4px solid #4f5bd5; }
+          .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#9ca3af; margin-bottom:6px; }
+          .val { font-size:1.4rem; font-weight:800; color:#fff; }
+          .footer { text-align:center; color:#6b7280; font-size:11px; margin-top:32px; }
+        </style>
+      </head>
+      <body>
+        <div class="wrap">
+          <h1>&#128202; Dashboard Snapshot</h1>
+          <div class="meta">Shared by <t t-esc="created_by"/> &#183; Expires <t t-esc="expires_at"/></div>
+          <div class="grid">
+            <t t-if="data">
+              <t t-foreach="data.items()" t-as="item">
+                <div class="card">
+                  <div class="lbl"><t t-esc="item[0]"/></div>
+                  <div class="val"><t t-esc="item[1]"/></div>
+                </div>
+              </t>
+            </t>
+          </div>
+          <div class="footer">This is a read-only snapshot. No login required, no data can be modified here.</div>
+        </div>
+      </body>
+    </html>
+  </template>
+
+  <template id="snapshot_expired" name="Snapshot Expired">
+    <html>
+      <head><meta charset="utf-8"/><title>Link Expired</title></head>
+      <body style="font-family:sans-serif;background:#0f1420;color:#e5e7eb;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+        <div style="text-align:center;">
+          <div style="font-size:48px;">&#9200;</div>
+          <h2>This snapshot link has expired or is invalid.</h2>
+        </div>
+      </body>
+    </html>
+  </template>
+</odoo>

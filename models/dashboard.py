@@ -1,50 +1,52 @@
-from odoo import models, api, fields
-from datetime import timedelta
 import json
+import re
+from datetime import timedelta
+from odoo import models, api, fields
 
 
-# ─── Default visibility per group ────────────────────────────────────────────
+# ─── Default visibility per role ─────────────────────────────────────────────
 _DEFAULT_VISIBILITY = {
     "admin": {
-        "kpi":True,"analytics":True,"chart":True,"operations":True,
-        "customers":True,"aging":True,"financial":True,"notes":True,
-        "journal":True,"transactions":True,"clv":True,"quick_search":True,
-        "multi_period":True,"settings":True,
+        "kpi": True, "analytics": True, "chart": True, "operations": True,
+        "customers": True, "aging": True, "financial": True, "notes": True,
+        "journal": True, "transactions": True, "clv": True, "quick_search": True,
+        "multi_period": True, "settings": True,
     },
     "manager": {
-        "kpi":True,"analytics":True,"chart":True,"operations":True,
-        "customers":True,"aging":True,"financial":False,"notes":True,
-        "journal":True,"transactions":True,"clv":True,"quick_search":True,
-        "multi_period":True,"settings":False,
+        "kpi": True, "analytics": True, "chart": True, "operations": True,
+        "customers": True, "aging": True, "financial": False, "notes": True,
+        "journal": True, "transactions": True, "clv": True, "quick_search": True,
+        "multi_period": True, "settings": False,
     },
     "user": {
-        "kpi":True,"analytics":False,"chart":False,"operations":False,
-        "customers":False,"aging":False,"financial":False,"notes":True,
-        "journal":False,"transactions":True,"clv":False,"quick_search":True,
-        "multi_period":False,"settings":False,
+        "kpi": True, "analytics": False, "chart": False, "operations": False,
+        "customers": False, "aging": False, "financial": False, "notes": True,
+        "journal": False, "transactions": True, "clv": False, "quick_search": True,
+        "multi_period": False, "settings": False,
     },
 }
 
 SECTION_LABELS = {
-    "kpi":          "KPI Cards",
-    "analytics":    "Analytics widgets (P&L, AOV, tax)",
-    "chart":        "Sales / Finance trend chart",
-    "operations":   "Operations (deliveries, stock, mismatches)",
-    "customers":    "Customer intelligence (new vs returning)",
-    "aging":        "AR / AP Aging report",
-    "financial":    "Financial controls (tax, unreconciled)",
-    "notes":        "Team notes panel",
-    "journal":      "Journal Balance table",
+    "kpi": "KPI Cards",
+    "analytics": "Analytics widgets (P&L, AOV, tax)",
+    "chart": "Sales / Finance trend chart",
+    "operations": "Operations (deliveries, stock, mismatches)",
+    "customers": "Customer intelligence (new vs returning)",
+    "aging": "AR / AP Aging report",
+    "financial": "Financial controls (tax, unreconciled)",
+    "notes": "Team notes panel",
+    "journal": "Journal Balance table",
     "transactions": "Transaction table",
-    "clv":          "Customer Lifetime Value table",
+    "clv": "Customer Lifetime Value table",
     "quick_search": "Quick search bar",
     "multi_period": "Multi-period comparison toggle",
-    "settings":     "Settings panel (admin only)",
+    "settings": "Settings panel (admin only)",
 }
 
 
 class DashboardData(models.AbstractModel):
     _name = "dashboard.data"
+    _description = "Eagle Business Dashboard Data Provider"
 
     # ─── Helpers ─────────────────────────────────────────────────────────────
     def _fmt(self, dt):
@@ -84,7 +86,6 @@ class DashboardData(models.AbstractModel):
 
     @api.model
     def save_visibility(self, config):
-        """config = {'admin': {...}, 'manager': {...}, 'user': {...}}"""
         if not self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin'):
             return False
         self.env['ir.config_parameter'].sudo().set_param(
@@ -103,6 +104,28 @@ class DashboardData(models.AbstractModel):
             'eagle_dashboard.team_notes', notes)
         return True
 
+    @api.model
+    def save_team_notes_with_mentions(self, notes):
+        self.env['ir.config_parameter'].sudo().set_param('eagle_dashboard.team_notes', notes)
+        mentioned = set(re.findall(r'@(\w[\w\s]{1,30}?)(?=[,.\s@]|$)', notes or ''))
+        notified = []
+        for name in mentioned:
+            user = self.env['res.users'].search([('name', 'ilike', name.strip())], limit=1)
+            if user and user.id != self.env.uid:
+                try:
+                    self.env['mail.activity'].sudo().create({
+                        'res_model_id': self.env['ir.model']._get_id('res.users'),
+                        'res_id': user.id,
+                        'activity_type_id': self.env.ref('mail.mail_activity_data_todo').id,
+                        'summary': f'Mentioned in Dashboard Team Notes by {self.env.user.name}',
+                        'note': notes[:300],
+                        'user_id': user.id,
+                    })
+                    notified.append(user.name)
+                except Exception:
+                    continue
+        return {'notified': notified}
+
     # ─── Sales Target ─────────────────────────────────────────────────────────
     @api.model
     def save_sales_target(self, amount):
@@ -110,85 +133,103 @@ class DashboardData(models.AbstractModel):
             'eagle_dashboard.sales_target', str(float(amount)))
         return True
 
+    # ─── Company info (used by all three dashboards for branding) ─────────
+    @api.model
+    def get_company_info(self):
+        company = self.env.company
+        return {'id': company.id, 'name': company.name}
+
     # ─── Business Dashboard – main data ──────────────────────────────────────
     @api.model
     def get_dashboard(self, from_date=False, to_date=False):
-        order_domain     = [('state', '=', 'sale')]
-        rfq_domain       = [('state', 'not in', ['purchase', 'done'])]
-        purchase_domain  = [('state', 'in',  ['purchase', 'done'])]
+        order_domain = [('state', '=', 'sale')]
+        rfq_domain = [('state', 'not in', ['purchase', 'done'])]
+        purchase_domain = [('state', 'in', ['purchase', 'done'])]
         quotation_domain = [('state', '!=', 'sale')]
-        payment_domain   = []
+        payment_domain = []
 
         if from_date and to_date:
             df = [('create_date', '>=', from_date), ('create_date', '<=', to_date)]
-            quotation_domain += df; rfq_domain += df; purchase_domain += df
-            order_domain = [('date_order','>=',from_date),('date_order','<=',to_date),('state','=','sale')]
-            payment_domain = [('date','>=',from_date),('date','<=',to_date)]
+            quotation_domain += df
+            rfq_domain += df
+            purchase_domain += df
+            order_domain = [('date_order', '>=', from_date), ('date_order', '<=', to_date), ('state', '=', 'sale')]
+            payment_domain = [('date', '>=', from_date), ('date', '<=', to_date)]
 
         quotations = self.env['sale.order'].search(quotation_domain)
-        orders     = self.env['sale.order'].search(order_domain)
-        purchases  = self.env['purchase.order'].search(purchase_domain)
-        payments   = self.env['account.payment'].search(payment_domain)
-        rfq        = self.env['purchase.order'].search(rfq_domain)
+        orders = self.env['sale.order'].search(order_domain)
+        purchases = self.env['purchase.order'].search(purchase_domain)
+        payments = self.env['account.payment'].search(payment_domain)
+        rfq = self.env['purchase.order'].search(rfq_domain)
 
         def sale_lines(o):
-            return [{'product':l.product_id.name or l.name or '','qty':l.product_uom_qty,
-                     'uom':l.product_uom.name or '','price_unit':l.price_unit,
-                     'discount':getattr(l,'discount',0.0) or 0.0,
-                     'tax':', '.join(l.tax_id.mapped('name')) if hasattr(l,'tax_id') else '',
-                     'subtotal':l.price_subtotal}
+            return [{'product': l.product_id.name or l.name or '', 'qty': l.product_uom_qty,
+                     'uom': l.product_uom.name or '', 'price_unit': l.price_unit,
+                     'discount': getattr(l, 'discount', 0.0) or 0.0,
+                     'tax': ', '.join(l.tax_id.mapped('name')) if hasattr(l, 'tax_id') else '',
+                     'subtotal': l.price_subtotal}
                     for l in o.order_line.filtered(lambda x: not x.display_type)]
 
         def pur_lines(o):
-            return [{'product':l.product_id.name or l.name or '','qty':l.product_qty,
-                     'uom':l.product_uom.name or '','price_unit':l.price_unit,
-                     'discount':getattr(l,'discount',0.0) or 0.0,
-                     'tax':', '.join(l.taxes_id.mapped('name')) if hasattr(l,'taxes_id') else '',
-                     'subtotal':l.price_subtotal}
+            return [{'product': l.product_id.name or l.name or '', 'qty': l.product_qty,
+                     'uom': l.product_uom.name or '', 'price_unit': l.price_unit,
+                     'discount': getattr(l, 'discount', 0.0) or 0.0,
+                     'tax': ', '.join(l.taxes_id.mapped('name')) if hasattr(l, 'taxes_id') else '',
+                     'subtotal': l.price_subtotal}
                     for l in o.order_line.filtered(lambda x: not x.display_type)]
 
         f = self._fmt
+
+        def parent_name(partner):
+            cp = partner.commercial_partner_id
+            return cp.name if (cp and cp.id != partner.id) else ''
+
         return {
-            'quotations':[{'id':q.id,'name':q.name,'partner':q.partner_id.name or '','partner_id':q.partner_id.id,
-                           'status':q.state,'date':f(q.date_order),'amount':q.amount_total,'lines':sale_lines(q)} for q in quotations],
-            'orders':    [{'id':o.id,'name':o.name,'partner':o.partner_id.name or '','partner_id':o.partner_id.id,
-                           'status':o.state,'date':f(o.date_order),'invoice_status':o.invoice_status,
-                           'amount':o.amount_total,'lines':sale_lines(o)} for o in orders],
-            'purchases': [{'id':p.id,'name':p.name,'partner':p.partner_id.name or '','partner_id':p.partner_id.id,
-                           'status':p.state,'date':f(p.date_order),'billing_status':p.invoice_status,
-                           'amount':p.amount_total,'lines':pur_lines(p)} for p in purchases],
-            'rfq':       [{'id':r.id,'name':r.name,'partner':r.partner_id.name or '','partner_id':r.partner_id.id,
-                           'status':r.state,'date':f(r.date_order),'amount':r.amount_total,'lines':pur_lines(r)} for r in rfq],
-            'transactions':[{'id':t.id,'name':t.name or 'Draft','partner':t.partner_id.name or '','partner_id':t.partner_id.id,
-                             'ledger':t.journal_id.name,'date':f(t.date),
-                             'received':t.amount if t.payment_type=='inbound' else 0,
-                             'paid':t.amount if t.payment_type=='outbound' else 0,'state':t.state} for t in payments],
+            'quotations': [{'id': q.id, 'name': q.name, 'partner': q.partner_id.name or '', 'partner_id': q.partner_id.id,
+                            'partner_parent': parent_name(q.partner_id),
+                            'status': q.state, 'date': f(q.date_order), 'amount': q.amount_total, 'lines': sale_lines(q)} for q in quotations],
+            'orders': [{'id': o.id, 'name': o.name, 'partner': o.partner_id.name or '', 'partner_id': o.partner_id.id,
+                        'partner_parent': parent_name(o.partner_id),
+                        'status': o.state, 'date': f(o.date_order), 'invoice_status': o.invoice_status,
+                        'amount': o.amount_total, 'lines': sale_lines(o)} for o in orders],
+            'purchases': [{'id': p.id, 'name': p.name, 'partner': p.partner_id.name or '', 'partner_id': p.partner_id.id,
+                           'partner_parent': parent_name(p.partner_id),
+                           'status': p.state, 'date': f(p.date_order), 'billing_status': p.invoice_status,
+                           'amount': p.amount_total, 'lines': pur_lines(p)} for p in purchases],
+            'rfq': [{'id': r.id, 'name': r.name, 'partner': r.partner_id.name or '', 'partner_id': r.partner_id.id,
+                     'partner_parent': parent_name(r.partner_id),
+                     'status': r.state, 'date': f(r.date_order), 'amount': r.amount_total, 'lines': pur_lines(r)} for r in rfq],
+            'transactions': [{'id': t.id, 'name': t.name or 'Draft', 'partner': t.partner_id.name or '', 'partner_id': t.partner_id.id,
+                              'partner_parent': parent_name(t.partner_id),
+                              'ledger': t.journal_id.name, 'date': f(t.date),
+                              'received': t.amount if t.payment_type == 'inbound' else 0,
+                              'paid': t.amount if t.payment_type == 'outbound' else 0, 'state': t.state} for t in payments],
         }
 
     # ─── Business Widgets (KPI) ───────────────────────────────────────────────
     @api.model
     def get_business_widgets(self):
         today = fields.Date.today()
-        fom   = today.replace(day=1)
-        d7    = today + timedelta(days=7)
+        fom = today.replace(day=1)
+        d7 = today + timedelta(days=7)
         param = self.env['ir.config_parameter'].sudo()
 
-        overdue = self.env['account.move'].search([('move_type','=','out_invoice'),('state','=','posted'),
-            ('payment_state','not in',['paid','in_payment']),('invoice_date_due','<',str(today))])
-        due_soon = self.env['account.move'].search([('move_type','=','out_invoice'),('state','=','posted'),
-            ('payment_state','not in',['paid','in_payment']),
-            ('invoice_date_due','>=',str(today)),('invoice_date_due','<=',str(d7))])
-        month_orders = self.env['sale.order'].search([('state','=','sale'),
-            ('date_order','>=',str(fom)),('date_order','<=',str(today))])
-        month_sales  = sum(month_orders.mapped('amount_total'))
-        sales_target = float(param.get_param('eagle_dashboard.sales_target','0') or '0')
+        overdue = self.env['account.move'].search([('move_type', '=', 'out_invoice'), ('state', '=', 'posted'),
+            ('payment_state', 'not in', ['paid', 'in_payment']), ('invoice_date_due', '<', str(today))])
+        due_soon = self.env['account.move'].search([('move_type', '=', 'out_invoice'), ('state', '=', 'posted'),
+            ('payment_state', 'not in', ['paid', 'in_payment']),
+            ('invoice_date_due', '>=', str(today)), ('invoice_date_due', '<=', str(d7))])
+        month_orders = self.env['sale.order'].search([('state', '=', 'sale'),
+            ('date_order', '>=', str(fom)), ('date_order', '<=', str(today))])
+        month_sales = sum(month_orders.mapped('amount_total'))
+        sales_target = float(param.get_param('eagle_dashboard.sales_target', '0') or '0')
 
         self.env.cr.execute("""
             SELECT rp.name, COALESCE(SUM(am.amount_total),0) as total
             FROM account_move am JOIN res_partner rp ON rp.id=am.partner_id
             WHERE am.move_type='out_invoice' AND am.state='posted'
             GROUP BY rp.id,rp.name ORDER BY total DESC LIMIT 5""")
-        top_customers = [{'name':r[0] or 'Unknown','total':round(float(r[1]),2)} for r in self.env.cr.fetchall()]
+        top_customers = [{'name': r[0] or 'Unknown', 'total': round(float(r[1]), 2)} for r in self.env.cr.fetchall()]
 
         low_stock = []
         try:
@@ -203,23 +244,36 @@ class DashboardData(models.AbstractModel):
             pass
 
         return {
-            'overdue_count':len(overdue),'overdue_amount':round(sum(overdue.mapped('amount_residual')),2),
-            'due_soon_count':len(due_soon),'due_soon_amount':round(sum(due_soon.mapped('amount_residual')),2),
-            'top_customers':top_customers,'month_sales':round(month_sales,2),
-            'sales_target':sales_target,'low_stock':low_stock,
+            'overdue_count': len(overdue), 'overdue_amount': round(sum(overdue.mapped('amount_residual')), 2),
+            'due_soon_count': len(due_soon), 'due_soon_amount': round(sum(due_soon.mapped('amount_residual')), 2),
+            'top_customers': top_customers, 'month_sales': round(month_sales, 2),
+            'sales_target': sales_target, 'low_stock': low_stock,
         }
+
+    # ─── Low stock snooze ────────────────────────────────────────────────────
+    @api.model
+    def snooze_low_stock_product(self, product_id, weeks):
+        today = fields.Date.today()
+        until = today + timedelta(weeks=int(weeks))
+        rec = self.env['dashboard.snoozed.product'].sudo().search([('product_id', '=', product_id)], limit=1)
+        if rec:
+            rec.write({'hide_until': until})
+        else:
+            self.env['dashboard.snoozed.product'].sudo().create({'product_id': product_id, 'hide_until': until})
+        return {'hide_until': str(until)}
+
+    @api.model
+    def unsnooze_low_stock_product(self, product_id):
+        self.env['dashboard.snoozed.product'].sudo().search([('product_id', '=', product_id)]).unlink()
+        return True
 
     # ─── Trend Chart Data ─────────────────────────────────────────────────────
     @api.model
     def get_trend_data(self, from_date=False, to_date=False, model='sale'):
-        """
-        Returns daily aggregated amounts for the selected period.
-        model: 'sale' (sale orders) or 'invoice' (posted customer invoices)
-        """
         if not from_date:
             today = fields.Date.today()
             from_date = str(today.replace(day=1))
-            to_date   = str(today)
+            to_date = str(today)
 
         if model == 'sale':
             self.env.cr.execute("""
@@ -245,7 +299,7 @@ class DashboardData(models.AbstractModel):
     @api.model
     def get_aging_report(self):
         result = {'ar': [], 'ap': []}
-        for move_type, key in [('out_invoice','ar'), ('in_invoice','ap')]:
+        for move_type, key in [('out_invoice', 'ar'), ('in_invoice', 'ap')]:
             self.env.cr.execute("""
                 SELECT
                     CASE
@@ -263,42 +317,39 @@ class DashboardData(models.AbstractModel):
                 GROUP BY bucket
                 ORDER BY bucket
             """, (move_type,))
-            result[key] = [{'bucket':r[0],'count':int(r[1]),'total':round(float(r[2]),2)}
-                           for r in self.env.cr.fetchall()]
+            result[key] = [{'bucket': r[0], 'count': int(r[1]), 'total': round(float(r[2]), 2)}
+                            for r in self.env.cr.fetchall()]
         return result
 
-    # ─── Operations Data ─────────────────────────────────────────────────────
+    # ─── Operations widget (small, embedded in Business Dashboard insights) ──
     @api.model
     def get_operations_data(self):
         pending_deliveries, mismatch, stock_value = [], [], 0.0
-
         try:
             pickings = self.env['stock.picking'].search([
-                ('picking_type_code','=','outgoing'),
-                ('state','not in',['done','cancel']),
+                ('picking_type_code', '=', 'outgoing'),
+                ('state', 'not in', ['done', 'cancel']),
             ], limit=20)
             for p in pickings:
                 late = p.scheduled_date and p.scheduled_date.date() < fields.Date.today()
                 pending_deliveries.append({
-                    'name':p.name,'partner':p.partner_id.name or '',
-                    'date':self._fmt(p.scheduled_date.date() if p.scheduled_date else None),
-                    'state':p.state,'late':late,
+                    'name': p.name, 'partner': p.partner_id.name or '',
+                    'date': self._fmt(p.scheduled_date.date() if p.scheduled_date else None),
+                    'state': p.state, 'late': late,
                 })
         except Exception:
             pass
-
         try:
-            # Purchase orders with qty_received != product_qty
-            pos = self.env['purchase.order'].search([('state','in',['purchase','done'])], limit=100)
+            pos = self.env['purchase.order'].search([('state', 'in', ['purchase', 'done'])], limit=100)
             for p in pos:
                 for l in p.order_line:
                     if abs(l.qty_received - l.product_qty) > 0.01:
                         mismatch.append({
-                            'po':p.name,'partner':p.partner_id.name or '',
-                            'product':l.product_id.name or '',
-                            'ordered':round(l.product_qty,2),
-                            'received':round(l.qty_received,2),
-                            'diff':round(l.product_qty - l.qty_received,2),
+                            'po': p.name, 'partner': p.partner_id.name or '',
+                            'product': l.product_id.name or '',
+                            'ordered': round(l.product_qty, 2),
+                            'received': round(l.qty_received, 2),
+                            'diff': round(l.product_qty - l.qty_received, 2),
                         })
                         if len(mismatch) >= 15:
                             break
@@ -306,68 +357,61 @@ class DashboardData(models.AbstractModel):
                     break
         except Exception:
             pass
-
         try:
-            self.env.cr.execute("""
-                SELECT COALESCE(SUM(svl.value),0) FROM stock_valuation_layer svl""")
+            self.env.cr.execute("SELECT COALESCE(SUM(svl.value),0) FROM stock_valuation_layer svl")
             row = self.env.cr.fetchone()
             stock_value = round(float(row[0] or 0), 2)
         except Exception:
             pass
-
-        return {'pending_deliveries':pending_deliveries,'mismatch':mismatch,'stock_value':stock_value}
+        return {'pending_deliveries': pending_deliveries, 'mismatch': mismatch, 'stock_value': stock_value}
 
     # ─── Customer Intelligence ────────────────────────────────────────────────
     @api.model
     def get_customer_intelligence(self, from_date=False, to_date=False):
         today = str(fields.Date.today())
         fd = from_date or today[:8] + '01'
-        td = to_date   or today
+        td = to_date or today
 
-        # Partners with orders in period
         self.env.cr.execute("""
             SELECT DISTINCT partner_id FROM sale_order
             WHERE state IN ('sale','done') AND DATE(date_order) >= %s AND DATE(date_order) <= %s
         """, (fd, td))
         period_partners = {r[0] for r in self.env.cr.fetchall()}
 
-        # Partners with orders BEFORE period
         self.env.cr.execute("""
             SELECT DISTINCT partner_id FROM sale_order
             WHERE state IN ('sale','done') AND DATE(date_order) < %s
         """, (fd,))
         before_partners = {r[0] for r in self.env.cr.fetchall()}
 
-        new_count       = len(period_partners - before_partners)
+        new_count = len(period_partners - before_partners)
         returning_count = len(period_partners & before_partners)
 
-        # CLV top 10
         self.env.cr.execute("""
             SELECT rp.id, rp.name,
-                   COUNT(DISTINCT so.id)        as orders,
+                   COUNT(DISTINCT so.id) as orders,
                    COALESCE(SUM(so.amount_total),0) as total,
                    COALESCE(AVG(so.amount_total),0) as avg_val,
-                   MAX(so.date_order)            as last_order
+                   MAX(so.date_order) as last_order
             FROM sale_order so
             JOIN res_partner rp ON rp.id=so.partner_id
             WHERE so.state IN ('sale','done')
             GROUP BY rp.id,rp.name
             ORDER BY total DESC LIMIT 10
         """)
-        clv = [{'id':r[0],'name':r[1] or 'Unknown','orders':int(r[2]),
-                'total':round(float(r[3]),2),'avg':round(float(r[4]),2),
-                'last_order':str(r[5])[:10] if r[5] else ''} for r in self.env.cr.fetchall()]
+        clv = [{'id': r[0], 'name': r[1] or 'Unknown', 'orders': int(r[2]),
+                'total': round(float(r[3]), 2), 'avg': round(float(r[4]), 2),
+                'last_order': str(r[5])[:10] if r[5] else ''} for r in self.env.cr.fetchall()]
 
-        return {'new':new_count,'returning':returning_count,'total':new_count+returning_count,'clv':clv}
+        return {'new': new_count, 'returning': returning_count, 'total': new_count + returning_count, 'clv': clv}
 
     # ─── Financial Controls ───────────────────────────────────────────────────
     @api.model
     def get_financial_controls(self, from_date=False, to_date=False):
         today = str(fields.Date.today())
         fd = from_date or today[:8] + '01'
-        td = to_date   or today
+        td = to_date or today
 
-        # Tax collected (on customer invoices)
         self.env.cr.execute("""
             SELECT COALESCE(SUM(aml.credit-aml.debit),0)
             FROM account_move_line aml
@@ -379,7 +423,6 @@ class DashboardData(models.AbstractModel):
         """, (fd, td))
         tax_collected = round(float(self.env.cr.fetchone()[0] or 0), 2)
 
-        # Tax paid (on vendor bills)
         self.env.cr.execute("""
             SELECT COALESCE(SUM(aml.debit-aml.credit),0)
             FROM account_move_line aml
@@ -391,7 +434,6 @@ class DashboardData(models.AbstractModel):
         """, (fd, td))
         tax_paid = round(float(self.env.cr.fetchone()[0] or 0), 2)
 
-        # Unreconciled bank lines
         unreconciled_count = 0
         try:
             self.env.cr.execute("""
@@ -403,16 +445,15 @@ class DashboardData(models.AbstractModel):
         except Exception:
             pass
 
-        # Multi-period comparison: current, previous same length, same period last year
         try:
             from datetime import date as ddate
             fd_dt = ddate.fromisoformat(fd)
             td_dt = ddate.fromisoformat(td)
-            span  = (td_dt - fd_dt).days + 1
+            span = (td_dt - fd_dt).days + 1
             prev_from = str(fd_dt - timedelta(days=span))
-            prev_to   = str(td_dt - timedelta(days=span))
-            ly_from   = str(fd_dt.replace(year=fd_dt.year-1))
-            ly_to     = str(td_dt.replace(year=td_dt.year-1))
+            prev_to = str(td_dt - timedelta(days=span))
+            ly_from = str(fd_dt.replace(year=fd_dt.year - 1))
+            ly_to = str(td_dt.replace(year=td_dt.year - 1))
 
             def period_sales(f, t):
                 self.env.cr.execute("""
@@ -421,9 +462,9 @@ class DashboardData(models.AbstractModel):
                 """, (f, t))
                 return round(float(self.env.cr.fetchone()[0] or 0), 2)
 
-            current_sales  = period_sales(fd, td)
+            current_sales = period_sales(fd, td)
             previous_sales = period_sales(prev_from, prev_to)
-            last_year_sales= period_sales(ly_from, ly_to)
+            last_year_sales = period_sales(ly_from, ly_to)
         except Exception:
             current_sales = previous_sales = last_year_sales = 0.0
 
@@ -439,132 +480,164 @@ class DashboardData(models.AbstractModel):
     # ─── Finance Dashboard – main data ───────────────────────────────────────
     @api.model
     def get_finance_dashboard(self, from_date=False, to_date=False):
-        inv_dom  = [('move_type','=','out_invoice'),('state','!=','cancel')]
-        vend_dom = [('move_type','=','in_invoice'), ('state','!=','cancel')]
-        pay_dom  = []
+        inv_dom = [('move_type', '=', 'out_invoice'), ('state', '!=', 'cancel')]
+        vend_dom = [('move_type', '=', 'in_invoice'), ('state', '!=', 'cancel')]
+        pay_dom = []
         if from_date and to_date:
-            df = [('invoice_date','>=',from_date),('invoice_date','<=',to_date)]
-            inv_dom  += df; vend_dom += df
-            pay_dom   = [('date','>=',from_date),('date','<=',to_date)]
+            df = [('invoice_date', '>=', from_date), ('invoice_date', '<=', to_date)]
+            inv_dom += df
+            vend_dom += df
+            pay_dom = [('date', '>=', from_date), ('date', '<=', to_date)]
 
-        invoices     = self.env['account.move'].search(inv_dom)
+        invoices = self.env['account.move'].search(inv_dom)
         vendor_bills = self.env['account.move'].search(vend_dom)
-        payments     = self.env['account.payment'].search(pay_dom)
+        payments = self.env['account.payment'].search(pay_dom)
         f = self._fmt
 
+        def parent_name(partner):
+            cp = partner.commercial_partner_id
+            return cp.name if (cp and cp.id != partner.id) else ''
+
         def move_row(m):
-            lines = [{'product':l.product_id.name or l.name or '','qty':l.quantity,
-                      'uom':l.product_uom_id.name or '','price_unit':l.price_unit,
-                      'discount':l.discount,'tax':', '.join(l.tax_ids.mapped('name')),
-                      'subtotal':l.price_subtotal}
-                     for l in m.invoice_line_ids.filtered(lambda x: x.display_type in (False,'product'))]
-            return {'id':m.id,'name':m.name,'partner':m.partner_id.name or '',
-                    'partner_id':m.partner_id.id,'date':f(m.invoice_date),
-                    'due_date':f(m.invoice_date_due),'amount':m.amount_total,
-                    'residual':m.amount_residual,'state':m.payment_state,'lines':lines}
+            lines = [{'product': l.product_id.name or l.name or '', 'qty': l.quantity,
+                      'uom': l.product_uom_id.name or '', 'price_unit': l.price_unit,
+                      'discount': l.discount, 'tax': ', '.join(l.tax_ids.mapped('name')),
+                      'subtotal': l.price_subtotal}
+                     for l in m.invoice_line_ids.filtered(lambda x: x.display_type in (False, 'product'))]
+            return {'id': m.id, 'name': m.name, 'partner': m.partner_id.name or '',
+                    'partner_id': m.partner_id.id, 'partner_parent': parent_name(m.partner_id), 'date': f(m.invoice_date),
+                    'due_date': f(m.invoice_date_due), 'amount': m.amount_total,
+                    'residual': m.amount_residual, 'state': m.payment_state, 'lines': lines}
 
         return {
-            'invoices':     [move_row(m) for m in invoices],
+            'invoices': [move_row(m) for m in invoices],
             'vendor_bills': [move_row(m) for m in vendor_bills],
-            'transactions': [{'id':t.id,'name':t.name or 'Draft','partner':t.partner_id.name or '',
-                              'partner_id':t.partner_id.id,'date':f(t.date),'journal':t.journal_id.name,
-                              'type':t.payment_type,
-                              'received':t.amount if t.payment_type=='inbound' else 0,
-                              'paid':    t.amount if t.payment_type=='outbound' else 0,
-                              'state':t.state} for t in payments],
+            'transactions': [{'id': t.id, 'name': t.name or 'Draft', 'partner': t.partner_id.name or '',
+                              'partner_id': t.partner_id.id, 'partner_parent': parent_name(t.partner_id),
+                              'date': f(t.date), 'journal': t.journal_id.name,
+                              'type': t.payment_type,
+                              'received': t.amount if t.payment_type == 'inbound' else 0,
+                              'paid': t.amount if t.payment_type == 'outbound' else 0,
+                              'state': t.state} for t in payments],
         }
 
     # ─── Finance Widgets (KPI) ────────────────────────────────────────────────
     @api.model
     def get_finance_widgets(self):
         today = fields.Date.today()
-        fom   = today.replace(day=1)
-        d7    = today + timedelta(days=7)
+        fom = today.replace(day=1)
+        d7 = today + timedelta(days=7)
 
-        overdue_bills = self.env['account.move'].search([('move_type','=','in_invoice'),('state','=','posted'),
-            ('payment_state','not in',['paid','in_payment']),('invoice_date_due','<',str(today))])
-        due_soon_bills= self.env['account.move'].search([('move_type','=','in_invoice'),('state','=','posted'),
-            ('payment_state','not in',['paid','in_payment']),
-            ('invoice_date_due','>=',str(today)),('invoice_date_due','<=',str(d7))])
-        overdue_inv   = self.env['account.move'].search([('move_type','=','out_invoice'),('state','=','posted'),
-            ('payment_state','not in',['paid','in_payment']),('invoice_date_due','<',str(today))])
+        overdue_bills = self.env['account.move'].search([('move_type', '=', 'in_invoice'), ('state', '=', 'posted'),
+            ('payment_state', 'not in', ['paid', 'in_payment']), ('invoice_date_due', '<', str(today))])
+        due_soon_bills = self.env['account.move'].search([('move_type', '=', 'in_invoice'), ('state', '=', 'posted'),
+            ('payment_state', 'not in', ['paid', 'in_payment']),
+            ('invoice_date_due', '>=', str(today)), ('invoice_date_due', '<=', str(d7))])
+        overdue_inv = self.env['account.move'].search([('move_type', '=', 'out_invoice'), ('state', '=', 'posted'),
+            ('payment_state', 'not in', ['paid', 'in_payment']), ('invoice_date_due', '<', str(today))])
 
-        journals    = self.env['account.journal'].search([('type','in',['bank','cash'])])
+        journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])])
         account_ids = journals.mapped('default_account_id').ids or [-1]
         self.env.cr.execute("SELECT COALESCE(SUM(aml.debit-aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date<%s",
             (account_ids, str(fom)))
         opening_cash = float(self.env.cr.fetchone()[0] or 0)
         self.env.cr.execute("SELECT COALESCE(SUM(aml.debit),0),COALESCE(SUM(aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date>=%s",
             (account_ids, str(fom)))
-        row=self.env.cr.fetchone(); month_in=float(row[0] or 0); month_out=float(row[1] or 0)
+        row = self.env.cr.fetchone()
+        month_in = float(row[0] or 0)
+        month_out = float(row[1] or 0)
 
-        # P&L for the month
         self.env.cr.execute("SELECT COALESCE(SUM(amount_total),0) FROM account_move WHERE move_type='out_invoice' AND state='posted' AND invoice_date>=%s", (str(fom),))
         revenue = float(self.env.cr.fetchone()[0] or 0)
         self.env.cr.execute("SELECT COALESCE(SUM(amount_total),0) FROM account_move WHERE move_type='in_invoice' AND state='posted' AND invoice_date>=%s", (str(fom),))
-        costs   = float(self.env.cr.fetchone()[0] or 0)
+        costs = float(self.env.cr.fetchone()[0] or 0)
 
         return {
-            'overdue_bills_count':len(overdue_bills),'overdue_bills_amount':round(sum(overdue_bills.mapped('amount_residual')),2),
-            'due_soon_count':len(due_soon_bills),'due_soon_amount':round(sum(due_soon_bills.mapped('amount_residual')),2),
-            'overdue_inv_count':len(overdue_inv),'overdue_inv_amount':round(sum(overdue_inv.mapped('amount_residual')),2),
-            'opening_cash':round(opening_cash,2),'month_in':round(month_in,2),
-            'month_out':round(month_out,2),'current_cash':round(opening_cash+month_in-month_out,2),
-            'revenue':round(revenue,2),'costs':round(costs,2),
-            'gross_profit':round(revenue-costs,2),
-            'margin_pct':round((revenue-costs)/revenue*100,1) if revenue else 0,
+            'overdue_bills_count': len(overdue_bills), 'overdue_bills_amount': round(sum(overdue_bills.mapped('amount_residual')), 2),
+            'due_soon_count': len(due_soon_bills), 'due_soon_amount': round(sum(due_soon_bills.mapped('amount_residual')), 2),
+            'overdue_inv_count': len(overdue_inv), 'overdue_inv_amount': round(sum(overdue_inv.mapped('amount_residual')), 2),
+            'opening_cash': round(opening_cash, 2), 'month_in': round(month_in, 2),
+            'month_out': round(month_out, 2), 'current_cash': round(opening_cash + month_in - month_out, 2),
+            'revenue': round(revenue, 2), 'costs': round(costs, 2),
+            'gross_profit': round(revenue - costs, 2),
+            'margin_pct': round((revenue - costs) / revenue * 100, 1) if revenue else 0,
         }
 
     # ─── Journal Balance ─────────────────────────────────────────────────────
     @api.model
     def get_journal_balance(self, from_date=False, to_date=False):
-        journals = self.env['account.journal'].search([('type','in',['bank','cash'])], order='name asc')
-        result   = []
+        journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])], order='name asc')
+        result = []
         for journal in journals:
             account = journal.default_account_id
-            if not account: continue
+            if not account:
+                continue
             opening = 0.0
             if from_date:
                 self.env.cr.execute("SELECT COALESCE(SUM(aml.debit-aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date<%s", ([account.id], from_date))
                 opening = float(self.env.cr.fetchone()[0] or 0)
-            parts=[]; params=[account.id]
-            if from_date: parts.append("am.date>=%s"); params.append(from_date)
-            if to_date:   parts.append("am.date<=%s"); params.append(to_date)
-            dc = ("AND "+" AND ".join(parts)) if parts else ""
+            parts = []
+            params = [account.id]
+            if from_date:
+                parts.append("am.date>=%s")
+                params.append(from_date)
+            if to_date:
+                parts.append("am.date<=%s")
+                params.append(to_date)
+            dc = ("AND " + " AND ".join(parts)) if parts else ""
             self.env.cr.execute("""SELECT COALESCE(SUM(aml.debit),0),COALESCE(SUM(aml.credit),0),
                 COUNT(*) FILTER(WHERE aml.debit>0),COUNT(*) FILTER(WHERE aml.credit>0)
                 FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id
                 WHERE aml.account_id=%%s AND am.state='posted' %s""" % dc, params)
-            row=self.env.cr.fetchone()
-            deposit=float(row[0] or 0); withdraw=float(row[1] or 0)
-            change=deposit-withdraw
-            result.append({'journal_id':journal.id,'journal_name':journal.name,
-                'opening':round(opening,2),'deposit':round(deposit,2),'deposit_count':int(row[2] or 0),
-                'withdraw':round(withdraw,2),'withdraw_count':int(row[3] or 0),
-                'change':round(change,2),'closing':round(opening+change,2)})
+            row = self.env.cr.fetchone()
+            deposit = float(row[0] or 0)
+            withdraw = float(row[1] or 0)
+            change = deposit - withdraw
+            result.append({'journal_id': journal.id, 'journal_name': journal.name,
+                'opening': round(opening, 2), 'deposit': round(deposit, 2), 'deposit_count': int(row[2] or 0),
+                'withdraw': round(withdraw, 2), 'withdraw_count': int(row[3] or 0),
+                'change': round(change, 2), 'closing': round(opening + change, 2)})
         return result
 
-    # ─── Company Info (name + logo for header) ────────────────────────────
     @api.model
-    def get_company_info(self):
-        c = self.env.company
-        return {'id': c.id, 'name': c.name}
+    def get_journal_transactions(self, journal_id, from_date=False, to_date=False):
+        domain = [('journal_id', '=', journal_id), ('state', 'in', ['in_process', 'paid'])]
+        if from_date:
+            domain.append(('date', '>=', from_date))
+        if to_date:
+            domain.append(('date', '<=', to_date))
+        payments = self.env['account.payment'].search(domain, order='date desc', limit=300)
+        f = self._fmt
+        return [{'id': p.id, 'name': p.name or 'Draft', 'partner': p.partner_id.name or '',
+                 'date': f(p.date), 'amount': p.amount, 'type': p.payment_type,
+                 'received': p.amount if p.payment_type == 'inbound' else 0,
+                 'paid': p.amount if p.payment_type == 'outbound' else 0,
+                 'state': p.state} for p in payments]
 
-    # ─── Snooze / Hide Low Stock Product Temporarily ──────────────────────
+    # ─── Payment validation from dashboard ────────────────────────────────
     @api.model
-    def snooze_low_stock_product(self, product_id, weeks):
-        until = fields.Date.today() + timedelta(weeks=int(weeks or 1))
-        rec = self.env['dashboard.snoozed.product'].sudo().search([('product_id', '=', product_id)], limit=1)
-        if rec:
-            rec.write({'hide_until': until})
-        else:
-            self.env['dashboard.snoozed.product'].sudo().create({'product_id': product_id, 'hide_until': until})
-        return {'hide_until': str(until)}
-
-    @api.model
-    def unsnooze_low_stock_product(self, product_id):
-        self.env['dashboard.snoozed.product'].sudo().search([('product_id', '=', product_id)]).unlink()
-        return True
+    def validate_payment(self, payment_id):
+        payment = self.env['account.payment'].browse(int(payment_id)).exists()
+        if not payment:
+            from odoo.exceptions import UserError
+            raise UserError('Payment entry not found.')
+        payment.ensure_one()
+        if payment.state == 'draft':
+            payment.action_post()
+        elif payment.state == 'in_process':
+            # In Odoo 18, in_process means the payment has already been posted
+            # but its outstanding/liquidity side is not yet reconciled. There is
+            # no second posting operation to perform. Keep the same dashboard
+            # button visible so the workflow is consistent, but report the
+            # actual accounting state instead of forcing an invalid transition.
+            return {
+                'id': payment.id,
+                'state': payment.state,
+                'name': payment.name or 'Payment',
+                'already_posted': True,
+                'message': '%s is already posted and is currently In Process. Reconciliation/bank matching is required to move it to Paid.' % (payment.name or 'Payment'),
+            }
+        return {'id': payment.id, 'state': payment.state, 'name': payment.name or 'Payment'}
 
     # ─── Dynamic List Action (for KPI card "view details" links) ─────────
     @api.model
@@ -574,7 +647,7 @@ class DashboardData(models.AbstractModel):
         drill-down links can open a proper Odoo 18 client action URL
         (/odoo/action-<id>) in a new tab, instead of relying on the legacy
         '/web#model=...&view_type=list' hash format which the Odoo 18
-        client no longer resolves reliably (it falls back to the home menu).
+        client no longer resolves reliably.
         """
         action = self.env['ir.actions.act_window'].sudo().create({
             'name': name,
@@ -598,15 +671,10 @@ class DashboardData(models.AbstractModel):
             today = fields.Date.today()
             sched = p.scheduled_date.date() if p.scheduled_date else None
             return {
-                'id': p.id,
-                'name': p.name,
-                'partner': p.partner_id.name or '',
-                'partner_id': p.partner_id.id,
+                'id': p.id, 'name': p.name, 'partner': p.partner_id.name or '', 'partner_id': p.partner_id.id,
                 'scheduled_date': self._fmt(sched) if sched else '',
                 'date_done': self._fmt(p.date_done.date()) if p.date_done else '',
-                'state': p.state,
-                'origin': p.origin or '',
-                'products_count': len(p.move_ids),
+                'state': p.state, 'origin': p.origin or '', 'products_count': len(p.move_ids),
                 'late': bool(sched and sched < today and p.state not in ('done', 'cancel')),
             }
 
@@ -619,8 +687,8 @@ class DashboardData(models.AbstractModel):
 
         return {
             'deliveries': [row(p) for p in deliveries],
-            'receipts':   [row(p) for p in receipts],
-            'internal':   [row(p) for p in internal],
+            'receipts': [row(p) for p in receipts],
+            'internal': [row(p) for p in internal],
         }
 
     @api.model
@@ -635,10 +703,8 @@ class DashboardData(models.AbstractModel):
         today_done = self.env['stock.picking'].search_count([
             ('state', '=', 'done'), ('date_done', '>=', str(today))])
         return {
-            'pending_deliveries': pending_deliveries,
-            'pending_receipts': pending_receipts,
-            'late': late,
-            'today_done': today_done,
+            'pending_deliveries': pending_deliveries, 'pending_receipts': pending_receipts,
+            'late': late, 'today_done': today_done,
         }
 
     @api.model
@@ -652,25 +718,11 @@ class DashboardData(models.AbstractModel):
                 return False
         return False
 
-
-    @api.model
-    def get_journal_transactions(self, journal_id, from_date=False, to_date=False):
-        domain = [('journal_id','=',journal_id),('state','=','posted')]
-        if from_date: domain.append(('date','>=',from_date))
-        if to_date:   domain.append(('date','<=',to_date))
-        payments = self.env['account.payment'].search(domain, order='date desc', limit=300)
-        f = self._fmt
-        return [{'id':p.id,'name':p.name or 'Draft','partner':p.partner_id.name or '',
-                 'date':f(p.date),'amount':p.amount,'type':p.payment_type,
-                 'received':p.amount if p.payment_type=='inbound' else 0,
-                 'paid':    p.amount if p.payment_type=='outbound' else 0,
-                 'state':p.state} for p in payments]
-
     # ═════════════════════════════════════════════════════════════════════
-    # NEW FEATURES BATCH 2
+    # FEATURE PACK — insights, exports, approvals, digest, layout
     # ═════════════════════════════════════════════════════════════════════
 
-    # ─── 1. Cash Flow Forecast (next 30 days) ─────────────────────────────
+    # ─── Cash Flow Forecast (next 30 days) ─────────────────────────────
     @api.model
     def get_cash_forecast(self):
         today = fields.Date.today()
@@ -713,7 +765,7 @@ class DashboardData(models.AbstractModel):
             result.append({'date': ds, 'in': round(day['in'], 2), 'out': round(day['out'], 2), 'balance': round(running, 2)})
         return {'current_balance': round(current_balance, 2), 'forecast': result}
 
-    # ─── 2. Reorder Point Predictor ───────────────────────────────────────
+    # ─── Reorder Point Predictor ───────────────────────────────────────
     @api.model
     def get_reorder_predictions(self):
         result = []
@@ -744,7 +796,7 @@ class DashboardData(models.AbstractModel):
             pass
         return result[:10]
 
-    # ─── 3. Seasonal Heatmap (sales by day-of-week × week-of-month) ──────
+    # ─── Seasonal Heatmap (sales by day-of-week) ──────────────────────────
     @api.model
     def get_seasonal_heatmap(self):
         self.env.cr.execute("""
@@ -756,10 +808,10 @@ class DashboardData(models.AbstractModel):
             GROUP BY dow ORDER BY dow
         """)
         rows = self.env.cr.fetchall()
-        days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+        days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
         return [{'day': days[int(r[0])], 'avg_amount': round(float(r[1]), 2), 'count': int(r[2])} for r in rows]
 
-    # ─── 4. Anomaly Detection ─────────────────────────────────────────────
+    # ─── Anomaly Detection ─────────────────────────────────────────────────
     @api.model
     def get_anomalies(self):
         result = []
@@ -786,7 +838,7 @@ class DashboardData(models.AbstractModel):
                 })
         return result
 
-    # ─── 5. Audit Trail Widget ─────────────────────────────────────────────
+    # ─── Audit Trail Widget ─────────────────────────────────────────────────
     @api.model
     def get_audit_trail(self, limit=15):
         result = []
@@ -806,7 +858,7 @@ class DashboardData(models.AbstractModel):
             pass
         return result
 
-    # ─── 6. Duplicate Invoice/Payment Detector ────────────────────────────
+    # ─── Duplicate Invoice/Payment Detector ────────────────────────────────
     @api.model
     def get_duplicate_invoices(self):
         self.env.cr.execute("""
@@ -831,7 +883,7 @@ class DashboardData(models.AbstractModel):
             })
         return result
 
-    # ─── 7. Missing Tax ID Warning ─────────────────────────────────────────
+    # ─── Missing Tax ID Warning ─────────────────────────────────────────────
     @api.model
     def get_missing_tax_id_partners(self):
         self.env.cr.execute("""
@@ -844,7 +896,7 @@ class DashboardData(models.AbstractModel):
         """)
         return [{'id': r[0], 'name': r[1] or 'Unknown'} for r in self.env.cr.fetchall()]
 
-    # ─── 8. Approval Queue ──────────────────────────────────────────────────
+    # ─── Approval Queue ──────────────────────────────────────────────────────
     @api.model
     def get_approval_queue(self):
         cfg = self.env['dashboard.approval.config'].get_config()
@@ -879,7 +931,7 @@ class DashboardData(models.AbstractModel):
             return True
         return False
 
-    # ─── 10. Daily Digest Email ────────────────────────────────────────────
+    # ─── Daily Digest Email ────────────────────────────────────────────────
     def send_daily_digest(self):
         today = fields.Date.today()
         widgets = self.get_business_widgets()
@@ -890,22 +942,35 @@ class DashboardData(models.AbstractModel):
         """, (str(today),))
         today_sales = float(self.env.cr.fetchone()[0] or 0)
 
-        template = self.env.ref('eagle_business_dashboard.mail_template_daily_digest', raise_if_not_found=False)
-        if not template:
-            return
-        admins = self.env['res.users'].search([('groups_id', '=', self.env.ref('eagle_business_dashboard.group_dashboard_admin').id)])
+        admins = self.env['res.users'].search([
+            ('groups_id', '=', self.env.ref('eagle_business_dashboard.group_dashboard_admin').id)
+        ])
+        body = f"""
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;">
+              <h2 style="color:#1a1f36;">Daily Business Digest</h2>
+              <p style="color:#6b7280;font-size:13px;">{today}</p>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                <tr><td style="padding:8px;border:1px solid #e5e7eb;">Today's Sales</td>
+                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">BDT {today_sales:.2f}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #e5e7eb;">Overdue Invoices</td>
+                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626;">{widgets['overdue_count']} (BDT {widgets['overdue_amount']:.2f})</td></tr>
+                <tr><td style="padding:8px;border:1px solid #e5e7eb;">Cash Balance</td>
+                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">BDT {finw['current_cash']:.2f}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #e5e7eb;">Low Stock Items</td>
+                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">{len(widgets['low_stock'])}</td></tr>
+              </table>
+              <p style="font-size:12px;color:#9ca3af;">Sent automatically by the {self.env.company.name} Dashboard.</p>
+            </div>
+        """
         for user in admins:
             if not user.email:
                 continue
-            ctx = {
-                'digest_date': str(today),
-                'today_sales': f"{today_sales:.2f}",
-                'overdue_count': widgets['overdue_count'],
-                'overdue_amount': f"{widgets['overdue_amount']:.2f}",
-                'cash_balance': f"{finw['current_cash']:.2f}",
-                'low_stock_count': len(widgets['low_stock']),
-            }
-            template.with_context(**ctx).send_mail(user.id, force_send=True)
+            self.env['mail.mail'].sudo().create({
+                'subject': f'{self.env.company.name} — Daily Business Digest',
+                'body_html': body,
+                'email_to': user.email,
+                'auto_delete': True,
+            }).send()
 
     @api.model
     def toggle_daily_digest(self, enabled):
@@ -919,7 +984,7 @@ class DashboardData(models.AbstractModel):
         cron = self.env.ref('eagle_business_dashboard.cron_daily_digest', raise_if_not_found=False)
         return {'enabled': bool(cron and cron.active)}
 
-    # ─── 11. Per-user Layout ───────────────────────────────────────────────
+    # ─── Per-user Layout ───────────────────────────────────────────────────
     @api.model
     def get_user_layout(self, dashboard='business'):
         key = f'eagle_dashboard.layout.{dashboard}.{self.env.uid}'
@@ -935,7 +1000,7 @@ class DashboardData(models.AbstractModel):
         self.env['ir.config_parameter'].sudo().set_param(key, json.dumps(layout))
         return True
 
-    # ─── 13. Currency Rates ────────────────────────────────────────────────
+    # ─── Currency Rates ────────────────────────────────────────────────────
     @api.model
     def get_currency_rates(self):
         company_currency = self.env.company.currency_id
@@ -951,20 +1016,24 @@ class DashboardData(models.AbstractModel):
                 continue
         return {'base': company_currency.name, 'rates': result}
 
-    # ─── 14. Bulk Actions ──────────────────────────────────────────────────
+    # ─── Bulk Actions ──────────────────────────────────────────────────────
     @api.model
     def bulk_mark_paid(self, move_ids):
-        moves = self.env['account.move'].browse(move_ids).filtered(lambda m: m.state == 'posted')
-        count = 0
+        moves = self.env['account.move'].browse(move_ids).filtered(
+            lambda m: m.state == 'posted' and m.payment_state not in ('paid', 'in_payment'))
+        count, errors = 0, []
         for m in moves:
             try:
-                m.js_assign_outstanding_line(m.id)
+                wizard = self.env['account.payment.register'].with_context(
+                    active_model='account.move', active_ids=m.ids
+                ).create({})
+                wizard._create_payments()
                 count += 1
-            except Exception:
-                continue
-        return {'processed': count}
+            except Exception as e:
+                errors.append(f"{m.name}: {str(e)[:120]}")
+        return {'processed': count, 'errors': errors}
 
-    # ─── 15. Saved Filter Presets ──────────────────────────────────────────
+    # ─── Saved Filter Presets ──────────────────────────────────────────────
     @api.model
     def get_saved_filters(self, dashboard='business'):
         filters = self.env['dashboard.saved.filter'].search([
@@ -989,24 +1058,61 @@ class DashboardData(models.AbstractModel):
             f.unlink()
         return True
 
-    # ─── 16. Quick Sale (barcode/POS style) ────────────────────────────────
+    # ─── Quick Sale (barcode/POS style) ────────────────────────────────────
+    @api.model
+    def get_product_options(self):
+        products = self.env['product.product'].search(
+            [('sale_ok', '=', True), ('active', '=', True)], limit=300, order='name asc')
+        return [{'id': p.id, 'name': p.display_name, 'price': p.list_price} for p in products]
+
     @api.model
     def create_quick_sale(self, partner_id, product_id, qty, price_unit=False):
         partner = self.env['res.partner'].browse(partner_id) if partner_id else self.env.ref('base.public_partner', raise_if_not_found=False)
         product = self.env['product.product'].browse(product_id)
         if not product.exists():
-            return {'error': 'Product not found'}
-        vals = {
-            'partner_id': partner.id if partner else self.env.user.partner_id.id,
-            'order_line': [(0, 0, {
-                'product_id': product.id, 'product_uom_qty': qty,
-                'price_unit': price_unit if price_unit else product.list_price,
-            })],
-        }
-        order = self.env['sale.order'].create(vals)
-        return {'id': order.id, 'name': order.name}
+            return {'error': 'Product not found. Please pick a product from the list.'}
+        if not qty or float(qty) <= 0:
+            return {'error': 'Quantity must be greater than 0.'}
 
-    # ─── 17. Vendor Scorecard ───────────────────────────────────────────────
+        final_partner_id = partner.id if partner else self.env.user.partner_id.id
+        line_vals = {
+            'product_id': product.id,
+            'product_uom_qty': qty,
+            'price_unit': price_unit if price_unit else product.list_price,
+        }
+
+        # If this partner already has a draft order, add the product line
+        # to it instead of creating a brand-new order. "Walk-in customer"
+        # (no partner selected) always creates a fresh order, since draft
+        # orders under the generic public partner shouldn't be merged
+        # together indiscriminately.
+        merged = False
+        order = self.env['sale.order']
+        if partner_id:
+            existing = self.env['sale.order'].search([
+                ('partner_id', '=', final_partner_id),
+                ('state', '=', 'draft'),
+            ], order='create_date desc', limit=1)
+            if existing:
+                # If the same product is already on the order, bump the qty
+                # instead of adding a duplicate line.
+                existing_line = existing.order_line.filtered(lambda l: l.product_id.id == product.id)
+                if existing_line:
+                    existing_line[0].product_uom_qty += qty
+                else:
+                    existing.write({'order_line': [(0, 0, line_vals)]})
+                order = existing
+                merged = True
+
+        if not merged:
+            order = self.env['sale.order'].create({
+                'partner_id': final_partner_id,
+                'order_line': [(0, 0, line_vals)],
+            })
+
+        return {'id': order.id, 'name': order.name, 'merged': merged}
+
+    # ─── Vendor Scorecard ───────────────────────────────────────────────────
     @api.model
     def get_vendor_scorecard(self):
         self.env.cr.execute("""
@@ -1042,3 +1148,159 @@ class DashboardData(models.AbstractModel):
                 'on_time_pct': on_time_pct, 'mismatch_count': mismatch_count,
             })
         return result
+
+    # ═════════════════════════════════════════════════════════════════════
+    # "MAKE IT ATTRACTIVE" PACK — presence, theme, comments, snapshot, NL summary
+    # ═════════════════════════════════════════════════════════════════════
+
+    # ─── Live presence ("who's online") ────────────────────────────────
+    @api.model
+    def heartbeat(self):
+        now = fields.Datetime.now()
+        rec = self.env['dashboard.presence'].sudo().search([('user_id', '=', self.env.uid)], limit=1)
+        if rec:
+            rec.write({'last_seen': now})
+        else:
+            self.env['dashboard.presence'].sudo().create({'user_id': self.env.uid, 'last_seen': now})
+        return True
+
+    @api.model
+    def get_online_users(self):
+        cutoff = fields.Datetime.now() - timedelta(minutes=2)
+        recs = self.env['dashboard.presence'].sudo().search([('last_seen', '>=', cutoff)])
+        return [{'id': r.user_id.id, 'name': r.user_id.name} for r in recs if r.user_id]
+
+    # ─── Theme color ─────────────────────────────────────────────────────
+    @api.model
+    def get_theme_color(self):
+        return self.env['ir.config_parameter'].sudo().get_param('eagle_dashboard.theme_color', '#4f5bd5')
+
+    @api.model
+    def save_theme_color(self, color):
+        self.env['ir.config_parameter'].sudo().set_param('eagle_dashboard.theme_color', color or '#4f5bd5')
+        return True
+
+    # ─── Comments on KPI cards ───────────────────────────────────────────
+    @api.model
+    def get_kpi_comments(self, kpi_key):
+        comments = self.env['dashboard.kpi.comment'].search([('kpi_key', '=', kpi_key)], limit=30)
+        return [{'id': c.id, 'text': c.text, 'author': c.user_id.name or '',
+                 'date': c.create_date.strftime('%d/%m %H:%M') if c.create_date else ''} for c in comments]
+
+    @api.model
+    def add_kpi_comment(self, kpi_key, text):
+        if not text or not text.strip():
+            return False
+        self.env['dashboard.kpi.comment'].create({'kpi_key': kpi_key, 'text': text.strip()[:500]})
+        return True
+
+    # ─── Shareable snapshot link ─────────────────────────────────────────
+    @api.model
+    def create_snapshot_link(self, snapshot_dict, hours=48):
+        link = self.env['dashboard.snapshot.link'].create({
+            'expires_at': fields.Datetime.now() + timedelta(hours=int(hours)),
+            'snapshot_data': json.dumps(snapshot_dict or {}),
+        })
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+        return {'url': f'{base_url}/dashboard/snapshot/{link.token}', 'token': link.token}
+
+    # ─── Natural-language summary ──────────────────────────────────────
+    @api.model
+    def get_nl_summary(self):
+        widgets = self.get_business_widgets()
+        fin = self.get_finance_widgets()
+        parts = []
+        if widgets['month_sales'] > 0:
+            parts.append(f"Sales this month total BDT {widgets['month_sales']:.0f}")
+        if fin.get('overdue_inv_count'):
+            parts.append(f"{fin['overdue_inv_count']} invoice(s) are overdue (BDT {fin['overdue_inv_amount']:.0f})")
+        if widgets.get('low_stock'):
+            parts.append(f"{len(widgets['low_stock'])} product(s) are running low on stock")
+        if fin.get('current_cash', 0) < 0:
+            parts.append("cash balance is currently negative — review outstanding payments")
+        if not parts:
+            return "Everything looks steady today — no urgent items to flag."
+        return ". ".join(parts) + "."
+
+    # ─── Best / worst sales day ─────────────────────────────────────────
+    @api.model
+    def get_best_worst_day(self, from_date=False, to_date=False):
+        today = fields.Date.today()
+        fd = from_date or str(today.replace(day=1))
+        td = to_date or str(today)
+        self.env.cr.execute("""
+            SELECT DATE(date_order) as d, COALESCE(SUM(amount_total),0) as total
+            FROM sale_order
+            WHERE state IN ('sale','done') AND DATE(date_order) >= %s AND DATE(date_order) <= %s
+            GROUP BY d ORDER BY total DESC
+        """, (fd, td))
+        rows = self.env.cr.fetchall()
+        if not rows:
+            return {'best': None, 'worst': None}
+        best = {'date': str(rows[0][0]), 'amount': round(float(rows[0][1]), 2)}
+        worst = {'date': str(rows[-1][0]), 'amount': round(float(rows[-1][1]), 2)}
+        return {'best': best, 'worst': worst}
+
+    # ─── Product bundling suggestions ───────────────────────────────────
+    @api.model
+    def get_product_bundles(self):
+        # Odoo 18 stores translated product names as JSONB. Selecting the
+        # name column directly can therefore return a dict to Python, which
+        # Owl renders as "[object Object]". Aggregate by product IDs first,
+        # then resolve display_name through the ORM so the active language is
+        # handled correctly.
+        self.env.cr.execute("""
+            SELECT l1.product_id, l2.product_id, COUNT(DISTINCT l1.order_id) AS cnt
+            FROM sale_order_line l1
+            JOIN sale_order_line l2
+              ON l1.order_id = l2.order_id
+             AND l1.product_id < l2.product_id
+            JOIN sale_order so ON so.id = l1.order_id
+            WHERE so.state IN ('sale', 'done')
+              AND l1.product_id IS NOT NULL
+              AND l2.product_id IS NOT NULL
+            GROUP BY l1.product_id, l2.product_id
+            HAVING COUNT(DISTINCT l1.order_id) > 1
+            ORDER BY cnt DESC
+            LIMIT 5
+        """)
+        rows = self.env.cr.fetchall()
+        if not rows:
+            return []
+
+        product_ids = {pid for row in rows for pid in row[:2]}
+        products = self.env['product.product'].browse(list(product_ids)).exists()
+        names = {product.id: product.display_name for product in products}
+        return [
+            {
+                'a': names.get(product_a, 'Unknown product'),
+                'b': names.get(product_b, 'Unknown product'),
+                'count': int(count),
+            }
+            for product_a, product_b, count in rows
+            if product_a in names and product_b in names
+        ]
+
+    # ─── Goal streaks ────────────────────────────────────────────────────
+    @api.model
+    def get_streak(self):
+        target = float(self.env['ir.config_parameter'].sudo().get_param('eagle_dashboard.sales_target', '0') or '0')
+        if target <= 0:
+            return {'streak': 0, 'daily_target': 0}
+        daily_target = target / 30.0
+        today = fields.Date.today()
+        streak = 0
+        for i in range(60):
+            d = today - timedelta(days=i)
+            self.env.cr.execute("""
+                SELECT COALESCE(SUM(amount_total),0) FROM sale_order
+                WHERE state IN ('sale','done') AND DATE(date_order) = %s
+            """, (str(d),))
+            day_total = float(self.env.cr.fetchone()[0] or 0)
+            if day_total >= daily_target:
+                streak += 1
+            else:
+                if i == 0:
+                    continue
+                break
+        return {'streak': streak, 'daily_target': round(daily_target, 2)}

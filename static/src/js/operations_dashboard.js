@@ -1,6 +1,6 @@
 /** @odoo-module **/
 import { registry } from "@web/core/registry";
-import { Component, onWillStart, useState } from "@odoo/owl";
+import { Component, onWillStart, onMounted, onWillDestroy, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
 
@@ -33,17 +33,69 @@ class OperationsDashboard extends Component {
             activeTab:'deliveries',
             companyName:'', companyId:0,
             darkMode:false,
+            onlineUsers:[], themeColor:'#4f5bd5',
+            showCommandPalette:false, commandQuery:'',
         });
 
+        this._heartbeatTimer = null;
         try { this.state.darkMode = localStorage.getItem('eagle_dark_mode') === '1'; } catch(e) {}
 
-        onWillStart(async () => { await this.loadAll(); });
+        onWillStart(async () => {
+            await this.loadAll();
+            try { this.state.themeColor = await this.orm.call("dashboard.data","get_theme_color",[]); } catch(e) {}
+        });
+        onMounted(() => {
+            this._keydownHandler = (ev) => this._onKeyDown(ev);
+            window.addEventListener('keydown', this._keydownHandler);
+            this.heartbeatNow();
+            this._heartbeatTimer = setInterval(() => this.heartbeatNow(), 30000);
+        });
+        onWillDestroy(() => {
+            if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
+            if (this._keydownHandler) window.removeEventListener('keydown', this._keydownHandler);
+        });
     }
+
+    get themeStyle() { return `--eagle-accent:${this.state.themeColor};`; }
+    async heartbeatNow() {
+        try {
+            await this.orm.call("dashboard.data","heartbeat",[]);
+            this.state.onlineUsers = await this.orm.call("dashboard.data","get_online_users",[]);
+        } catch(e) { /* silent */ }
+    }
+    _onKeyDown(ev) {
+        const tag = (ev.target.tagName || '').toLowerCase();
+        const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || ev.target.isContentEditable;
+        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+            ev.preventDefault(); this.state.showCommandPalette = true; this.state.commandQuery = ''; return;
+        }
+        if (ev.key === 'Escape' && this.state.showCommandPalette) { this.state.showCommandPalette = false; return; }
+        if (typing || this.state.showCommandPalette) return;
+        const k = ev.key.toLowerCase();
+        if (k === 'b') this.goToBusinessDashboard();
+        else if (k === 'f') this.goToFinanceDashboard();
+        else if (k === 'd') this.toggleDarkMode();
+    }
+    closeCommandPalette() { this.state.showCommandPalette = false; }
+    onCommandQueryChange(ev) { this.state.commandQuery = ev.target.value; }
+    get commandActions() {
+        const all = [
+            {label:'Go to Business Dashboard', icon:'fa-th-large', run:()=>this.goToBusinessDashboard()},
+            {label:'Go to Finance Dashboard', icon:'fa-line-chart', run:()=>this.goToFinanceDashboard()},
+            {label:'Toggle Dark Mode', icon:'fa-moon-o', run:()=>this.toggleDarkMode()},
+            {label:'View Delivery Orders', icon:'fa-truck', run:()=>this.setTab('deliveries')},
+            {label:'View Receipts', icon:'fa-inbox', run:()=>this.setTab('receipts')},
+            {label:'View Internal Transfers', icon:'fa-exchange', run:()=>this.setTab('internal')},
+        ];
+        const q = this.state.commandQuery.trim().toLowerCase();
+        return q ? all.filter(a => a.label.toLowerCase().includes(q)) : all;
+    }
+    runCommand(action) { this.state.showCommandPalette = false; action.run(); }
+    toggleDarkMode(){this.state.darkMode=!this.state.darkMode;try{localStorage.setItem('eagle_dark_mode',this.state.darkMode?'1':'0');}catch(e){}}
 
     _fmt(d){return d.toISOString().split('T')[0];}
     _syncShared(){Object.assign(sharedFilterState,{from_date:this.state.from_date,to_date:this.state.to_date,active_preset:this.state.active_preset,selected_month:this.state.selected_month,selected_year:this.state.selected_year,partner_filter:this.state.partner_filter});}
     _setDates(from,to,preset='custom'){this.state.from_date=this._fmt(from);this.state.to_date=this._fmt(to);this.state.active_preset=preset;this._syncShared();this.loadAll();}
-    toggleDarkMode(){this.state.darkMode=!this.state.darkMode;try{localStorage.setItem('eagle_dark_mode',this.state.darkMode?'1':'0');}catch(e){}}
 
     applyPreset(p){
         const n=new Date(),y=n.getFullYear(),m=n.getMonth(),d=n.getDate();
@@ -75,7 +127,6 @@ class OperationsDashboard extends Component {
         } catch(e) { console.error("Operations dashboard load error:", e); }
     }
 
-    // ── Filters ───────────────────────────────────────────────────────────
     _ok(r) {
         const q=this.state.partner_filter.trim().toLowerCase();
         const nameOk = !q || (r.partner||'').toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q);
@@ -89,20 +140,17 @@ class OperationsDashboard extends Component {
     setTab(tab){ this.state.activeTab = tab; }
     onStatusFilterChange(ev){ this.state.statusFilter = ev.target.value; }
 
-    // ── CSV export ────────────────────────────────────────────────────────
     _writeCSV(rows,fn){if(!rows||!rows.length)return;const k=Object.keys(rows[0]);const l=[k.join(','),...rows.map(r=>k.map(key=>`"${String(r[key]??'').replace(/"/g,'""')}"`).join(','))];const b=new Blob(['\uFEFF'+l.join('\n')],{type:'text/csv;charset=utf-8;'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=fn;a.click();URL.revokeObjectURL(a.href);}
     exportDeliveries(){this._writeCSV(this.filteredDeliveries.map(r=>({'Reference':r.name,'Partner':r.partner,'Scheduled':r.scheduled_date,'Done':r.date_done,'Origin':r.origin,'Products':r.products_count,'Status':r.state})),'deliveries.csv');}
     exportReceipts(){this._writeCSV(this.filteredReceipts.map(r=>({'Reference':r.name,'Partner':r.partner,'Scheduled':r.scheduled_date,'Done':r.date_done,'Origin':r.origin,'Products':r.products_count,'Status':r.state})),'receipts.csv');}
     exportInternal(){this._writeCSV(this.filteredInternal.map(r=>({'Reference':r.name,'Partner':r.partner,'Scheduled':r.scheduled_date,'Done':r.date_done,'Origin':r.origin,'Products':r.products_count,'Status':r.state})),'internal_transfers.csv');}
 
-    // ── Validate a picking directly from the dashboard ─────────────────────
     async validatePicking(id, ev) {
         if (ev) ev.stopPropagation();
         const ok = await this.orm.call("dashboard.data","validate_picking",[id]);
         if (ok) await this.loadAll();
     }
 
-    // ── Navigation ────────────────────────────────────────────────────────
     _openTab(model,id){const t=window.open(`/web#model=${model}&id=${id}&view_type=form`,'_blank');if(t)t.focus();}
     openPicking(id){this._openTab('stock.picking',id);}
     openPartner(id){this._openTab('res.partner',id);}

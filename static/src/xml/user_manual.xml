@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+<t t-name="advanced_business_dashboard.user_manual">
+<div t-attf-class="eagle-app #{state.darkMode ? 'dark' : ''}" t-att-style="themeStyle + 'height:100%;display:flex;flex-direction:column;'">
+
+  <!-- HEADER -->
+  <div class="eagle-header">
+    <div class="eagle-brand">
+      <div class="eagle-brand-icon" style="overflow:hidden;">
+        <img t-if="state.companyId" t-attf-src="/web/image/res.company/#{state.companyId}/logo" alt="" style="width:100%;height:100%;object-fit:contain;"/>
+        <i t-if="!state.companyId" class="fa fa-book" style="color:#fff"/>
+      </div>
+      <t t-esc="state.companyName || 'Business Dashboard'"/> - User Manual
+    </div>
+    <div class="eagle-nav">
+      <button class="eagle-nav-btn" t-on-click="goToBusinessDashboard">Business</button>
+      <button class="eagle-nav-btn" t-on-click="goToFinanceDashboard">Finance</button>
+      <button class="eagle-nav-btn" t-on-click="goToOperationsDashboard">Operations</button>
+      <button class="eagle-nav-btn active">Manual</button>
+    </div>
+    <div class="eagle-header-actions">
+      <button class="eagle-manual-tool" t-on-click="printManual" title="Print this manual"><i class="fa fa-print"/></button>
+      <button class="eagle-manual-tool" t-on-click="toggleDark" title="Toggle dark mode"><i class="fa fa-moon-o"/></button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="eagle-manual-wrap">
+
+    <!-- SIDEBAR -->
+    <div class="eagle-manual-side">
+      <div class="eagle-manual-search">
+        <i class="fa fa-search"/>
+        <input type="text" placeholder="Search topics..." t-model="state.query"/>
+      </div>
+      <div class="eagle-manual-navlist">
+        <t t-foreach="visibleSections" t-as="sec" t-key="sec.id">
+          <button t-attf-class="eagle-manual-navbtn #{state.section === sec.id ? 'active' : ''}"
+                  t-on-click="() => this.select(sec.id)">
+            <i t-attf-class="fa #{sec.icon}"/>
+            <span t-esc="sec.title"/>
+          </button>
+        </t>
+        <div t-if="visibleSections.length === 0" class="eagle-manual-empty">No topic matches that search.</div>
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="eagle-manual-content">
+      <h1 class="eagle-manual-h1"><t t-esc="currentTitle"/></h1>
+
+      <!-- GETTING STARTED -->
+      <div t-if="state.section === 'start'">
+        <p class="eagle-manual-lead">The Business Dashboard app gathers your sales, finance and warehouse numbers into three linked screens, so you can see how the business is doing without opening five different Odoo apps.</p>
+        <h3>Opening the app</h3>
+        <p>Click <b>Business Dashboard</b> in the main Odoo menu. The Business Dashboard opens first. Use the buttons at the top right of the blue header to move between Business, Finance and Operations.</p>
+        <h3>The three screens at a glance</h3>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Screen</th><th>Answers the question</th></tr></thead>
+          <tbody>
+            <tr><td>Business</td><td>How much are we selling, to whom, and are we on target?</td></tr>
+            <tr><td>Finance</td><td>What money is coming in, what is going out, and what is overdue?</td></tr>
+            <tr><td>Operations</td><td>What still has to be shipped or received, and what is late?</td></tr>
+          </tbody>
+        </table>
+        <h3>What you can see depends on your access</h3>
+        <p>There are three access levels: <b>Dashboard User</b> (KPI cards and summary tables), <b>Dashboard Manager</b> (adds analytics, operations and customer sections) and <b>Dashboard Admin</b> (everything, plus the ability to control what other groups see). If a section described in this manual is missing on your screen, your access level most likely does not include it - ask your administrator.</p>
+        <div class="eagle-manual-tip"><b>Tip:</b> almost every number on a card is clickable. Clicking it opens the actual Odoo list of records behind that number in a new browser tab, so you can check the detail yourself.</div>
+      </div>
+
+      <!-- BUSINESS -->
+      <div t-if="state.section === 'business'">
+        <p class="eagle-manual-lead">The Business Dashboard is the sales and performance overview.</p>
+        <h3>KPI cards</h3>
+        <p>The row of coloured cards at the top shows headline figures for the selected date range - sales totals, order counts, purchases and customer numbers. The values count up when they load so you can see them change after a filter switch. Cards with a pointer cursor open the underlying records when clicked.</p>
+        <h3>Sales target and streak</h3>
+        <p>Set a monthly sales target from the dashboard, and the progress bar shows how far along you are. When you cross the target, the screen fires a short confetti animation. The app also tracks a <b>streak</b> - the number of consecutive days the target was met - so you can see momentum rather than a single day in isolation.</p>
+        <h3>Trends and analysis</h3>
+        <ul>
+          <li><b>Trend chart</b> - sales or purchases plotted over the selected period.</li>
+          <li><b>Best and worst day</b> - the strongest and weakest trading day in the range.</li>
+          <li><b>Seasonal heatmap</b> - which months historically perform best.</li>
+          <li><b>Customer intelligence</b> - top customers, with parent companies grouped together so branches of one company are counted as one customer.</li>
+          <li><b>Frequently bought together</b> - product pairs that appear on the same order, useful for bundling and shelf placement.</li>
+          <li><b>Anomalies</b> - transactions that look unusual against recent patterns and may deserve a second look.</li>
+        </ul>
+        <h3>Team notes</h3>
+        <p>A shared notes box lets the team leave messages for each other on the dashboard. Typing an <b>@</b> followed by a colleague's name mentions them, and they receive an Odoo notification.</p>
+      </div>
+
+      <!-- FINANCE -->
+      <div t-if="state.section === 'finance'">
+        <p class="eagle-manual-lead">The Finance Dashboard covers money in, money out and what is overdue.</p>
+        <h3>Finance KPI cards</h3>
+        <p>Headline figures for receivables, payables, paid and unpaid amounts in the selected range. As on the other screens, clicking a card opens the matching invoice or payment list.</p>
+        <h3>Aging report</h3>
+        <p>Receivables and payables are split into aging buckets so you can see not just how much is outstanding but how long it has been outstanding. Anything in the oldest bucket needs attention first.</p>
+        <h3>Journal balances</h3>
+        <p>The journal balance panel lists each journal with its balance for the period. Click a journal to open a modal listing the individual transactions that make up that balance - useful when a bank or cash journal does not match what you expected.</p>
+        <h3>Cash flow forecast</h3>
+        <p>A 30-day forward view built from invoices and bills already in the system with their due dates, showing expected inflows against expected outflows. It is a projection from existing documents, not a prediction of new business.</p>
+        <h3>Financial controls</h3>
+        <ul>
+          <li><b>Duplicate invoices</b> - invoices that look like they may have been entered twice.</li>
+          <li><b>Missing tax ID</b> - partners with no tax identification recorded.</li>
+          <li><b>Audit trail</b> - recent changes to accounting records.</li>
+          <li><b>Vendor scorecard</b> - vendor performance across spend and delivery.</li>
+        </ul>
+      </div>
+
+      <!-- OPERATIONS -->
+      <div t-if="state.section === 'operations'">
+        <p class="eagle-manual-lead">The Operations Dashboard is the warehouse view: what is waiting to go out, what is waiting to come in, and what has slipped.</p>
+        <h3>Operations KPI cards</h3>
+        <p>Pending deliveries, pending receipts, late transfers and transfers completed today. Each card opens the matching list of stock transfers.</p>
+        <h3>Transfer tabs</h3>
+        <p>Below the cards, three tabs separate <b>Deliveries</b>, <b>Receipts</b> and <b>Internal</b> transfers. Use the status filter to narrow a tab to a particular state, for example only those that are ready.</p>
+        <h3>Validating a transfer</h3>
+        <p>Transfers can be validated straight from the list without opening the Inventory app. If a transfer cannot be validated - typically because stock is not available or a required field is missing - Odoo's normal error message is shown and nothing is changed.</p>
+        <div class="eagle-manual-warn"><b>Note:</b> validating a transfer moves real stock. It has the same effect as validating it in the Inventory app and cannot be undone by clicking again.</div>
+      </div>
+
+      <!-- QUICK SALE -->
+      <div t-if="state.section === 'quicksale'">
+        <p class="eagle-manual-lead">Quick Sale is the floating round button in the bottom corner of the dashboard. It creates a sales order in a few seconds without leaving the screen.</p>
+        <h3>Creating a sale</h3>
+        <ol>
+          <li>Click the Quick Sale button to open the panel.</li>
+          <li>Start typing a customer name and pick the match from the list.</li>
+          <li>Start typing a product name and pick it from the searchable dropdown.</li>
+          <li>Enter the quantity, and a unit price if you want to override the standard price.</li>
+          <li>Confirm. The order is created and the dashboard figures refresh.</li>
+        </ol>
+        <h3>Orders are merged, not duplicated</h3>
+        <p>If the selected customer already has an open draft order, the new line is added to that existing draft instead of creating a second one. This keeps one order per customer per visit rather than a scatter of one-line drafts.</p>
+        <div class="eagle-manual-tip"><b>Tip:</b> you never need to know a database ID. Both the customer and product fields are type-to-search - type a few letters and choose from the list.</div>
+      </div>
+
+      <!-- PROCESS ORDERS -->
+      <div t-if="state.section === 'process'">
+        <p class="eagle-manual-lead">The <b>Process</b> button runs an order through the rest of its workflow in one click, so a routine order does not need the Sales, Inventory and Accounting apps opened one after another.</p>
+        <h3>Where it appears</h3>
+        <p>In the Status column of the <b>Orders</b>, <b>Purchase</b>, <b>Quotations</b> and <b>RFQ</b> panels. It is shown only while something is still outstanding - an order already confirmed, delivered and invoiced shows no button at all.</p>
+        <h3>What it does</h3>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Panel</th><th>Chain it runs</th></tr></thead>
+          <tbody>
+            <tr><td>Quotations</td><td>Confirm the quotation, validate the delivery, create the invoice, post it</td></tr>
+            <tr><td>Orders</td><td>Validate the delivery, create the invoice, post it</td></tr>
+            <tr><td>RFQ</td><td>Confirm the order, validate the receipt, create the vendor bill, post it</td></tr>
+            <tr><td>Purchase</td><td>Validate the receipt, create the vendor bill, post it</td></tr>
+          </tbody>
+        </table>
+        <p>Delivered and received quantities are set to the quantities ordered. A confirmation box lists what is about to happen before anything changes, and a summary afterwards lists every step that ran.</p>
+        <h3>When a step cannot run</h3>
+        <p>Stages are attempted in order and each stands on its own. If the delivery cannot be validated - usually because stock is short - that stage is undone and skipped, the invoice stage still runs, and the summary names the step that stopped and why. Nothing is left half-written.</p>
+        <h3>Pressing it again</h3>
+        <p>Safe. Each stage checks its own state first, so a second click picks up only what is still outstanding. Use it again after fixing whatever blocked a step the first time.</p>
+        <div class="eagle-manual-warn"><b>Care:</b> this moves real stock and posts real accounting entries, exactly as doing each step by hand would, and neither can be undone by clicking again. Use it for routine orders that need no judgement, and open anything unusual in its own app instead.</div>
+      </div>
+
+      <!-- PAYMENTS -->
+      <div t-if="state.section === 'payments'">
+        <p class="eagle-manual-lead">The Transactions panel on the Business Dashboard lists payments in and out, and lets you record and validate them without opening Accounting.</p>
+        <h3>Recording money in and out</h3>
+        <p>Use <b>Receive</b> for money coming in and <b>Send</b> for money going out. Both open the standard Odoo payment form with the direction already set, so you only fill in partner, amount and journal.</p>
+        <h3>Validating a payment</h3>
+        <p>A <b>Validate</b> button appears in the Status column of any payment that is not yet finished - both <b>draft</b> and <b>in process</b> rows. One click advances the payment as far as it can go: a draft is posted, and an in-process payment is validated to paid. If it is already at its end state, no button is shown.</p>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Status</th><th>Means</th><th>Validate does</th></tr></thead>
+          <tbody>
+            <tr><td>draft</td><td>Entered but not posted</td><td>Posts it, then validates if it can</td></tr>
+            <tr><td>in_process</td><td>Posted, not yet settled</td><td>Validates it through to paid</td></tr>
+            <tr><td>paid</td><td>Finished</td><td>Nothing - no button is shown</td></tr>
+          </tbody>
+        </table>
+        <h3>Marking invoices paid in bulk</h3>
+        <p>Select several invoices and mark them paid in one action rather than opening each one. Use this for batches you have already reconciled against a bank statement or cash book.</p>
+        <h3>Where the records live</h3>
+        <p>Everything created or changed here is an ordinary Odoo record. Use <b>Business Dashboard > Accounting > Payments</b>, <b>Customer Invoices</b> or <b>Vendor Bills</b> to see them in full.</p>
+        <div class="eagle-manual-warn"><b>Care:</b> validating and bulk actions post accounting entries. Check the row before confirming - reversing a posted entry is more work than getting it right first time.</div>
+      </div>
+
+      <!-- FILTERS -->
+      <div t-if="state.section === 'filters'">
+        <p class="eagle-manual-lead">The filter bar under the header controls what every panel on the screen shows.</p>
+        <h3>Date range</h3>
+        <p>Set a from date and a to date, or use the month and year selectors for a whole period. All cards, charts and tables recalculate.</p>
+        <h3>Partner filter</h3>
+        <p>Restrict the screen to one customer or vendor. Parent and child companies are matched together, so filtering on a head office includes its branches.</p>
+        <h3>Filters follow you between screens</h3>
+        <p>Move from Business to Finance to Operations and your date range and partner filter travel with you. You do not have to set the same period three times.</p>
+        <h3>Saved presets</h3>
+        <p>Give a filter combination a name and save it. It appears in the preset list for one-click recall later, and presets are private to your user. Delete one from the same list when it is no longer useful.</p>
+      </div>
+
+      <!-- STOCK -->
+      <div t-if="state.section === 'stock'">
+        <p class="eagle-manual-lead">The low-stock widget flags products running low before they run out.</p>
+        <h3>Reading the list</h3>
+        <p>Each entry shows the product image, name and current quantity on hand. The panel folds away if you want it out of the way, and expands again when you need it.</p>
+        <h3>Snoozing a product</h3>
+        <p>Some products are meant to be low - discontinued lines, seasonal items, things already on order. Snooze such a product for a chosen number of weeks and it disappears from the list until that date passes, then returns automatically. This keeps the list meaningful instead of full of items you have already dealt with.</p>
+        <h3>Reorder suggestions</h3>
+        <p>The reorder panel estimates which products are likely to need restocking based on recent sales rates. Treat it as a prompt to check, not an instruction to buy.</p>
+      </div>
+
+      <!-- APPROVALS -->
+      <div t-if="state.section === 'approvals'">
+        <p class="eagle-manual-lead">Large orders can be held for a manager's approval before they are confirmed.</p>
+        <h3>How thresholds work</h3>
+        <p>An administrator sets a value threshold for sales orders and another for purchase orders. Any order above its threshold appears in the approval queue on the dashboard instead of being confirmed straight away. A threshold of zero switches the check off entirely.</p>
+        <h3>Approving</h3>
+        <p>Open the approval queue, review the order value and customer or vendor, and approve it. The order then continues through its normal Odoo workflow.</p>
+      </div>
+
+      <!-- VISIBILITY -->
+      <div t-if="state.section === 'visibility'">
+        <p class="eagle-manual-lead">Administrators can decide which dashboard sections each access level sees.</p>
+        <p>Rather than giving everyone the same crowded screen, hide sections that are not relevant to a group - for example keeping margin and finance panels away from users who only need sales figures. Changes apply to the group, not to one person, and take effect the next time affected users load the dashboard.</p>
+        <div class="eagle-manual-tip"><b>Tip:</b> if a colleague reports that a panel has vanished, check the visibility configuration before assuming something is broken.</div>
+      </div>
+
+      <!-- EXPORT -->
+      <div t-if="state.section === 'export'">
+        <p class="eagle-manual-lead">Anything on screen can leave the screen.</p>
+        <h3>CSV export</h3>
+        <p>Export the current view to CSV. The file keeps the structure of what you are looking at rather than flattening it: detail rows, line rows and subtotal rows are each marked, so the figures still add up when opened in a spreadsheet.</p>
+        <h3>PDF and printing</h3>
+        <p>Generate a PDF of the current dashboard for circulation or filing. This manual can also be printed - use the printer icon in the header.</p>
+        <div class="eagle-manual-tip"><b>Tip:</b> exports respect your current filters. Set the date range and partner filter first, then export.</div>
+      </div>
+
+      <!-- SHARE -->
+      <div t-if="state.section === 'share'">
+        <p class="eagle-manual-lead">A snapshot link shares what you are seeing with someone who has no Odoo login.</p>
+        <h3>How it works</h3>
+        <p>Creating a snapshot freezes the current figures and produces a web link. Anyone with the link sees those frozen figures - it is a photograph, not a window. Later changes in Odoo do not appear in an already-created snapshot.</p>
+        <h3>Expiry</h3>
+        <p>Every link has an expiry time set when it is created. After that the link stops working and shows an expiry notice instead of the data.</p>
+        <div class="eagle-manual-warn"><b>Care:</b> anyone holding the link can view the snapshot until it expires - no login is required. Only share business figures with people who should see them, and keep expiry times short.</div>
+      </div>
+
+      <!-- COLLAB -->
+      <div t-if="state.section === 'collab'">
+        <p class="eagle-manual-lead">Two small features make the dashboard easier to use as a team.</p>
+        <h3>KPI comments</h3>
+        <p>Leave a comment on an individual KPI card - why a number dipped, what was agreed, what to check next month. The comment stays attached to that card for everyone who can see it, so the explanation lives next to the figure instead of in a chat thread nobody can find later.</p>
+        <h3>Who is online</h3>
+        <p>The header shows which colleagues currently have the dashboard open. It is useful before sending a figure to someone who may already be looking at it.</p>
+        <h3>Natural language summary</h3>
+        <p>A short written summary of the current period in plain sentences, handy for pasting into a message or a meeting note.</p>
+      </div>
+
+      <!-- DIGEST -->
+      <div t-if="state.section === 'digest'">
+        <p class="eagle-manual-lead">The daily digest emails a short performance summary once a day.</p>
+        <p>The digest is switched off by default. Turn it on from the dashboard, and from then on a scheduled job sends the summary once every day. Turn it off again from the same control. The status indicator shows whether it is currently active.</p>
+        <div class="eagle-manual-tip"><b>Tip:</b> if the digest is on but nothing arrives, the scheduled job is the first thing for an administrator to check - see the Developer Manual.</div>
+      </div>
+
+      <!-- MENUS -->
+      <div t-if="state.section === 'menus'">
+        <p class="eagle-manual-lead">The app carries its own menu tree so you can reach common records without switching apps.</p>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Menu</th><th>Contains</th></tr></thead>
+          <tbody>
+            <tr><td>Product</td><td>Products, Product Variants, Product Categories</td></tr>
+            <tr><td>Contact</td><td>All Contacts, Customers, Vendors</td></tr>
+            <tr><td>Sale</td><td>Quotations (draft), Sales Orders (confirmed)</td></tr>
+            <tr><td>Purchase</td><td>Requests for Quotation, Purchase Orders</td></tr>
+            <tr><td>Inventory</td><td>Transfers, Warehouses, Stock on Hand</td></tr>
+            <tr><td>Operations</td><td>Operations Dashboard, Delivery Orders, Receipts</td></tr>
+            <tr><td>Accounting</td><td>Customer Invoices, Vendor Bills, Payments, Journals, Chart of Accounts, Journal Entries</td></tr>
+            <tr><td>Documentation</td><td>This User Manual, and the Developer Manual for administrators</td></tr>
+          </tbody>
+        </table>
+        <p>These open the standard Odoo screens, already filtered - for example Quotations shows drafts only, and Customers shows partners with sales history.</p>
+      </div>
+
+      <!-- SHORTCUTS -->
+      <div t-if="state.section === 'shortcuts'">
+        <p class="eagle-manual-lead">The command palette is the fastest way around the app.</p>
+        <table class="eagle-manual-table">
+          <thead><tr><th>Shortcut</th><th>Does</th></tr></thead>
+          <tbody>
+            <tr><td><span class="eagle-kbd">Ctrl</span> + <span class="eagle-kbd">K</span></td><td>Open the command palette</td></tr>
+            <tr><td>Type, then <span class="eagle-kbd">Enter</span></td><td>Jump to the matching screen or action</td></tr>
+            <tr><td><span class="eagle-kbd">Esc</span></td><td>Close the palette or any open modal</td></tr>
+          </tbody>
+        </table>
+        <p>You can also switch the whole app between light and dark appearance, and pick an accent colour that is remembered for your user across all three dashboards.</p>
+      </div>
+
+      <!-- TROUBLE -->
+      <div t-if="state.section === 'trouble'">
+        <table class="eagle-manual-table">
+          <thead><tr><th>Symptom</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr><td>All figures show zero</td><td>Check the date range - it is the most common cause. A partner filter left in place will also empty most panels.</td></tr>
+            <tr><td>A panel I used to see is gone</td><td>Your access level or the visibility configuration changed. Ask an administrator.</td></tr>
+            <tr><td>Clicking a card opens nothing</td><td>The new tab was blocked by the browser. Allow pop-ups for this site.</td></tr>
+            <tr><td>Quick Sale will not confirm</td><td>Usually a missing customer or product selection, or a product with no price. The panel shows the reason under the button.</td></tr>
+            <tr><td>A transfer will not validate</td><td>Odoo is refusing it, not the dashboard - typically insufficient stock. Open the transfer in Inventory for the full message.</td></tr>
+            <tr><td>A shared snapshot link shows "expired"</td><td>Links expire by design. Create a new one.</td></tr>
+            <tr><td>Numbers look stale</td><td>Reload the browser tab. The dashboard loads its data when it opens.</td></tr>
+            <tr><td>Digest email not arriving</td><td>Confirm the digest is switched on, then ask an administrator to check the scheduled job and outgoing mail server.</td></tr>
+          </tbody>
+        </table>
+        <div class="eagle-manual-tip">If a problem persists, note what you clicked, what you expected and what happened, and pass it to whoever maintains the module. A screenshot of the screen with its filter bar visible is usually enough to identify the cause.</div>
+      </div>
+
+      <div class="eagle-manual-foot">Advanced Business Dashboard - User Manual - version 18.0.3.4</div>
+    </div>
+  </div>
+</div>
+</t>
+</templates>
