@@ -445,7 +445,7 @@
                   <td class="text-end money-out"><t t-esc="tx.paid"/></td>
                   <td>
                     <span t-attf-class="ebadge #{(tx.state=='paid'||tx.state=='in_process')?'ebadge-green':tx.state=='draft'?'ebadge-gray':(tx.state=='canceled'||tx.state=='rejected')?'ebadge-red':'ebadge-yellow'}"><t t-esc="tx.state"/></span>
-                    <button t-if="tx.state=='draft'" class="ebtn ebtn-sm ebtn-green ms-2"
+                    <button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2"
                             t-att-disabled="state.validatingPaymentId===tx.id"
                             t-on-click="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment">
                       <i class="fa fa-check"/> Validate

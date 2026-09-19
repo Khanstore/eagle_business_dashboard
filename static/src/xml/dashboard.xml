@@ -321,17 +321,28 @@
               <div class="eagle-alert eagle-alert-danger mb-3"><i class="fa fa-exclamation-circle me-1"/><t t-esc="state.quickSaleError"/></div>
             </t>
             <label class="form-label small text-muted">Partner (optional)</label>
-            <select class="form-select form-select-sm mb-3" t-on-change="(ev)=>{this.state.quickSalePartner=ev.target.value;}">
-              <option value="">— Walk-in customer —</option>
-              <t t-foreach="state.partnerOptions" t-as="p" t-key="p.id"><option t-att-value="p.id"><t t-esc="p.name"/></option></t>
-            </select>
-            <label class="form-label small text-muted">Product</label>
-            <select class="form-select form-select-sm mb-3" t-on-change="(ev)=>{this.state.quickSaleProduct=ev.target.value;}">
-              <option value="">— Select a product —</option>
-              <t t-foreach="state.productOptions" t-as="p" t-key="p.id">
-                <option t-att-value="p.id"><t t-esc="p.name"/> — BDT <t t-esc="p.price.toFixed(2)"/></option>
+            <input type="text" class="form-control form-control-sm mb-3"
+                   placeholder="Type to search partner..."
+                   list="eagle-quick-sale-partners"
+                   t-model="state.quickSalePartnerSearch"
+                   t-on-input="onQuickSalePartnerInput"/>
+            <datalist id="eagle-quick-sale-partners">
+              <option value="— Walk-in customer —"/>
+              <t t-foreach="state.partnerOptions" t-as="p" t-key="p.id">
+                <option t-att-value="p.name + ' [#' + p.id + ']'"/>
               </t>
-            </select>
+            </datalist>
+            <label class="form-label small text-muted">Product</label>
+            <input type="text" class="form-control form-control-sm mb-3"
+                   placeholder="Type to search product..."
+                   list="eagle-quick-sale-products"
+                   t-model="state.quickSaleProductSearch"
+                   t-on-input="onQuickSaleProductInput"/>
+            <datalist id="eagle-quick-sale-products">
+              <t t-foreach="state.productOptions" t-as="p" t-key="p.id">
+                <option t-att-value="p.name + ' — BDT ' + p.price.toFixed(2) + ' [#' + p.id + ']'"/>
+              </t>
+            </datalist>
             <t t-if="state.productOptions.length === 0 and !state.quickSaleError">
               <p class="text-muted small mb-3"><i class="fa fa-spinner fa-spin me-1"/>Loading products...</p>
             </t>
@@ -903,7 +914,7 @@
               <td class="text-end money-out"><t t-esc="tx.paid"/></td>
               <td>
                 <span t-attf-class="ebadge #{(tx.state=='paid'||tx.state=='in_process')?'ebadge-green':tx.state=='draft'?'ebadge-gray':(tx.state=='canceled'||tx.state=='rejected')?'ebadge-red':'ebadge-yellow'}"><t t-esc="tx.state"/></span>
-                <button t-if="tx.state=='draft'" class="ebtn ebtn-sm ebtn-green ms-2"
+                <button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2"
                         t-att-disabled="state.validatingPaymentId===tx.id"
                         t-on-click="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment">
                   <i class="fa fa-check"/> Validate

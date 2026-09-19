@@ -214,4 +214,21 @@
         <field name="context">{'default_move_type': 'entry'}</field>
     </record>
     <menuitem id="master_menu_accounting_entries" parent="master_menu_accounting" name="Journal Entries" action="master_action_journal_entries" sequence="6"/>
+    <!-- ── Documentation ── -->
+    <menuitem id="master_menu_documentation" parent="advanced_dashboard_menu" name="Documentation" sequence="99"/>
+
+    <record id="action_user_manual" model="ir.actions.act_url">
+        <field name="name">User Manual</field>
+        <field name="url">/eagle_business_dashboard/static/docs/user_manual.html</field>
+        <field name="target">new</field>
+    </record>
+    <menuitem id="master_menu_user_manual" parent="master_menu_documentation" name="User Manual" action="action_user_manual" sequence="1"/>
+
+    <record id="action_developer_manual" model="ir.actions.act_url">
+        <field name="name">Developer Manual</field>
+        <field name="url">/eagle_business_dashboard/static/docs/developer_manual.html</field>
+        <field name="target">new</field>
+    </record>
+    <menuitem id="master_menu_developer_manual" parent="master_menu_documentation" name="Developer Manual" action="action_developer_manual" groups="base.group_system" sequence="2"/>
+
 </odoo>

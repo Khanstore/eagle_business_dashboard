@@ -79,7 +79,7 @@ class Dashboard extends Component {
             showKpiComments:false, activeKpiKey:'', activeKpiLabel:'', kpiComments:[], newCommentText:'',
             showShareModal:false, shareUrl:'',
             savedFilters:[], showSaveFilterPrompt:false, filterNameInput:'',
-            showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSaleQty:1,
+            showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSalePartnerSearch:'', quickSaleProductSearch:'', quickSaleQty:1,
             validatingPaymentId:0,
             productOptions:[], quickSaleError:'', quickSaleSubmitting:false, quickSaleLastResult:'',
         });
@@ -632,39 +632,6 @@ class Dashboard extends Component {
     _openTab(model,id){const t=window.open(`/web#model=${model}&id=${id}&view_type=form`,'_blank');if(t)t.focus();}
     openOrder(id)      {this._openTab('sale.order',id); const r=this.state.orders.find(o=>o.id===id)||this.state.quotations.find(o=>o.id===id); this._pushRecentlyViewed('order',id,r?r.name:`Order #${id}`);}
     openPurchase(id)   {this._openTab('purchase.order',id); const r=this.state.purchases.find(o=>o.id===id)||this.state.rfq.find(o=>o.id===id); this._pushRecentlyViewed('purchase',id,r?r.name:`Purchase #${id}`);}
-    openTransaction(id){this._openTab('account.payment',id); const r=this.state.transactions.find(o=>o.id===id); this._pushRecentlyViewed('transaction',id,r?r.name:`Payment #${id}`);}
-    openPartner(id)    {this._openTab('res.partner',id); const p=this.state.partnerOptions.find(o=>Number(o.id)===id); this._pushRecentlyViewed('partner',id,p?p.name:`Partner #${id}`);}
-    createOrder()    {const t=window.open('/web#model=sale.order&view_type=form','_blank'); if(t)t.focus();}
-    createPurchase() {const t=window.open('/web#model=purchase.order&view_type=form','_blank'); if(t)t.focus();}
-    async createPayment(type) {
-        const partnerType = type === 'inbound' ? 'customer' : 'supplier';
-        await this.action.doAction({
-            type: 'ir.actions.act_window',
-            name: type === 'inbound' ? 'Receive Money' : 'Send Money',
-            res_model: 'account.payment',
-            views: [[false, 'form']],
-            target: 'current',
-            context: {
-                default_payment_type: type,
-                default_partner_type: partnerType,
-            },
-        });
-        await this.loadAll();
-    }
-
-    async validatePayment(id) {
-        if (this.state.validatingPaymentId) return;
-        this.state.validatingPaymentId = id;
-        try {
-            await this.orm.call('dashboard.data', 'validate_payment', [id]);
-            await this.loadAll();
-        } catch (e) {
-            console.error('Payment validation failed:', e);
-            window.alert(e?.data?.message || e?.message || 'Unable to validate this payment.');
-        } finally {
-            this.state.validatingPaymentId = 0;
-        }
-    }
     goToFinanceDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.finance_dashboard_action");}
     goToOperationsDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.operations_dashboard_action");}
 
@@ -696,7 +663,9 @@ class Dashboard extends Component {
 
     // ── Quick Sale ────────────────────────────────────────────────────────
     async openQuickSale() {
-        this.state.quickSalePartner=''; this.state.quickSaleProduct=''; this.state.quickSaleQty=1;
+        this.state.quickSalePartner=''; this.state.quickSaleProduct='';
+        this.state.quickSalePartnerSearch=''; this.state.quickSaleProductSearch='';
+        this.state.quickSaleQty=1;
         this.state.quickSaleError=''; this.state.quickSaleSubmitting=false;
         this.state.showQuickSale=true;
         try {
@@ -708,6 +677,22 @@ class Dashboard extends Component {
         }
     }
     closeQuickSale() { this.state.showQuickSale=false; }
+
+    onQuickSalePartnerInput(ev) {
+        const value = (ev.target.value || '').trim();
+        this.state.quickSalePartnerSearch = value;
+        const match = value.match(/\[#(\d+)\]\s*$/);
+        this.state.quickSalePartner = match ? match[1] : '';
+        if (value === '— Walk-in customer —') this.state.quickSalePartner = '';
+    }
+
+    onQuickSaleProductInput(ev) {
+        const value = (ev.target.value || '').trim();
+        this.state.quickSaleProductSearch = value;
+        const match = value.match(/\[#(\d+)\]\s*$/);
+        this.state.quickSaleProduct = match ? match[1] : '';
+    }
+
     async submitQuickSale() {
         this.state.quickSaleError = '';
         if (!this.state.quickSaleProduct) {

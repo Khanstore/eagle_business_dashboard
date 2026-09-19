@@ -624,6 +624,19 @@ class DashboardData(models.AbstractModel):
         payment.ensure_one()
         if payment.state == 'draft':
             payment.action_post()
+        elif payment.state == 'in_process':
+            # In Odoo 18, in_process means the payment has already been posted
+            # but its outstanding/liquidity side is not yet reconciled. There is
+            # no second posting operation to perform. Keep the same dashboard
+            # button visible so the workflow is consistent, but report the
+            # actual accounting state instead of forcing an invalid transition.
+            return {
+                'id': payment.id,
+                'state': payment.state,
+                'name': payment.name or 'Payment',
+                'already_posted': True,
+                'message': '%s is already posted and is currently In Process. Reconciliation/bank matching is required to move it to Paid.' % (payment.name or 'Payment'),
+            }
         return {'id': payment.id, 'state': payment.state, 'name': payment.name or 'Payment'}
 
     # ─── Dynamic List Action (for KPI card "view details" links) ─────────
