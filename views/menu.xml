@@ -14,6 +14,49 @@
         <field name="tag">operations_dashboard_tag</field>
     </record>
 
+    <!-- Ledger Balance Security views/action must be defined before menus reference the action. -->
+    <record id="view_dashboard_ledger_security_tree" model="ir.ui.view">
+        <field name="name">dashboard.ledger.security.tree</field>
+        <field name="model">dashboard.ledger.security</field>
+        <field name="arch" type="xml">
+            <list string="Ledger Balance Security">
+                <field name="journal_id"/>
+                <field name="masked"/>
+                <field name="approved_user_ids" widget="many2many_tags"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_dashboard_ledger_security_form" model="ir.ui.view">
+        <field name="name">dashboard.ledger.security.form</field>
+        <field name="model">dashboard.ledger.security</field>
+        <field name="arch" type="xml">
+            <form string="Ledger Balance Security">
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="journal_id" options="{&quot;no_create&quot;: true}"/></h1>
+                    </div>
+                    <group>
+                        <field name="masked"/>
+                        <field name="approved_user_ids" widget="many2many_tags" options="{&quot;no_create&quot;: true}"/>
+                    </group>
+                    <separator string="Visibility rule"/>
+                    <div class="text-muted">
+                        When masking is enabled, Previous and Current balances are hidden for users who are not approved. The Change/Difference remains visible to everyone.
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ledger_balance_security" model="ir.actions.act_window">
+        <field name="name">Ledger Balance Security</field>
+        <field name="res_model">dashboard.ledger.security</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_dashboard_ledger_security_tree"/>
+        <field name="context">{}</field>
+    </record>
+
     <menuitem id="advanced_dashboard_menu"
               name="Business Dashboard"
               web_icon="eagle_business_dashboard,static/description/icon.png"
@@ -38,15 +81,6 @@
               sequence="2"
               groups="base.group_system,eagle_business_dashboard.group_dashboard_admin"/>
 
-    <record id="action_ledger_balance_security_sync" model="ir.actions.server">
-        <field name="name">Ledger Balance Security</field>
-        <field name="model_id" ref="model_dashboard_ledger_security"/>
-        <field name="state">code</field>
-        <field name="code">
-model.sync_journal_rules()
-action = env.ref('eagle_business_dashboard.action_ledger_balance_security').read()[0]
-        </field>
-    </record>
 
     <menuitem id="finance_dashboard_ledger_security_menu"
               parent="finance_dashboard_settings_menu"
@@ -258,48 +292,6 @@ action = env.ref('eagle_business_dashboard.action_ledger_balance_security').read
     </record>
     <menuitem id="master_menu_accounting_entries" parent="master_menu_accounting" name="Journal Entries" action="master_action_journal_entries" sequence="6"/>
     <!-- ── Ledger Balance Security direct administrator screen ── -->
-    <record id="view_dashboard_ledger_security_tree" model="ir.ui.view">
-        <field name="name">dashboard.ledger.security.tree</field>
-        <field name="model">dashboard.ledger.security</field>
-        <field name="arch" type="xml">
-            <list string="Ledger Balance Security">
-                <field name="journal_id"/>
-                <field name="masked"/>
-                <field name="approved_user_ids" widget="many2many_tags"/>
-            </list>
-        </field>
-    </record>
-
-    <record id="view_dashboard_ledger_security_form" model="ir.ui.view">
-        <field name="name">dashboard.ledger.security.form</field>
-        <field name="model">dashboard.ledger.security</field>
-        <field name="arch" type="xml">
-            <form string="Ledger Balance Security">
-                <sheet>
-                    <div class="oe_title">
-                        <h1><field name="journal_id" options="{&quot;no_create&quot;: true}"/></h1>
-                    </div>
-                    <group>
-                        <field name="masked"/>
-                        <field name="approved_user_ids" widget="many2many_tags" options="{&quot;no_create&quot;: true}"/>
-                    </group>
-                    <separator string="Visibility rule"/>
-                    <div class="text-muted">
-                        When masking is enabled, Previous and Current balances are hidden for users who are not approved. The Change/Difference remains visible to everyone.
-                    </div>
-                </sheet>
-            </form>
-        </field>
-    </record>
-
-    <record id="action_ledger_balance_security" model="ir.actions.act_window">
-        <field name="name">Ledger Balance Security</field>
-        <field name="res_model">dashboard.ledger.security</field>
-        <field name="view_mode">list,form</field>
-        <field name="view_id" ref="view_dashboard_ledger_security_tree"/>
-        <field name="context">{}</field>
-    </record>
-
     <!-- ── Documentation ── -->
     <menuitem id="master_menu_documentation" parent="advanced_dashboard_menu" name="Documentation" sequence="99"/>
 

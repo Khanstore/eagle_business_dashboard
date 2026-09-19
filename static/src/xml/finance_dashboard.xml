@@ -323,21 +323,33 @@
     <t t-if="vis('journal')">
       <div class="eagle-card">
         <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-balance-scale"/>Journal Balance <span class="ebadge ebadge-blue ms-1"><t t-esc="state.journal_balances.length"/></span></h4>
-          <div class="d-flex gap-2"><span class="text-muted small align-self-center"><i class="fa fa-hand-o-up me-1"/>Click row to drill down</span><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportJB" title="Export CSV"><i class="fa fa-download"/></button><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleTable('journal')" t-att-aria-expanded="state.tableOpen.journal" title="Show / hide table"><i t-attf-class="fa #{state.tableOpen.journal?'fa-chevron-up':'fa-chevron-down'}"/></button></div>
+          <div class="d-flex gap-2"><span class="text-muted small align-self-center"><i class="fa fa-hand-o-up me-1"/>Click any journal row to expand its transactions</span><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportJB" title="Export CSV"><i class="fa fa-download"/></button><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleTable('journal')" t-att-aria-expanded="state.tableOpen.journal" title="Show / hide table"><i t-attf-class="fa #{state.tableOpen.journal?'fa-chevron-up':'fa-chevron-down'}"/></button></div>
         </div>
         <t t-if="state.tableOpen.journal"><div class="eagle-table-wrap"><table class="eagle-table">
           <thead><tr><th>Journal</th><th class="text-end">Previous Balance</th><th class="text-end">Deposit</th><th class="text-end">Withdraw</th><th class="text-end">Change</th><th class="text-end">New Balance</th></tr></thead>
           <tbody>
             <t t-if="state.journal_balances.length===0"><tr><td colspan="6" class="text-center text-muted py-4 fst-italic">No bank/cash journals found.</td></tr></t>
-            <t t-foreach="state.journal_balances" t-as="jb" t-key="jb.journal_name">
-              <tr class="jb-row-clickable" t-on-click="()=>this.openDrillDown(jb)">
-                <td class="fw-semibold"><i class="fa fa-chevron-right me-1" style="font-size:10px;color:#9ca3af"/><t t-esc="jb.journal_name"/></td>
+            <t t-foreach="state.journal_balances" t-as="jb" t-key="jb.journal_id">
+              <tr class="jb-row-clickable" t-on-click="()=>this.toggleJournalRow(jb.journal_id)" t-att-aria-expanded="isJournalRowOpen(jb.journal_id)" t-att-title="isJournalRowOpen(jb.journal_id) ? 'Click to collapse transactions' : 'Click to show transactions'">
+                <td class="fw-semibold"><button type="button" class="jb-row-toggle" t-on-click.stop="()=>this.toggleJournalRow(jb.journal_id)" t-att-aria-label="isJournalRowOpen(jb.journal_id) ? 'Collapse journal transactions' : 'Expand journal transactions'"><i t-attf-class="fa #{isJournalRowOpen(jb.journal_id)?'fa-chevron-down':'fa-chevron-right'}"/></button><t t-esc="jb.journal_name"/></td>
                 <td class="text-end money"><t t-if="jb.balance_masked">••••••</t><t t-else=""><t t-esc="jb.opening.toFixed(2)"/></t></td>
                 <td class="text-end money-in"><t t-esc="jb.deposit.toFixed(2)"/> <span class="text-muted ms-1" style="font-size:10px">(<t t-esc="jb.deposit_count"/>)</span></td>
                 <td class="text-end money-out"><t t-esc="jb.withdraw.toFixed(2)"/> <span class="text-muted ms-1" style="font-size:10px">(<t t-esc="jb.withdraw_count"/>)</span></td>
                 <td t-attf-class="text-end fw-bold #{jb.change>=0?'money-in':'money-out'}"><t t-if="jb.change>=0">+</t><t t-esc="jb.change.toFixed(2)"/></td>
                 <td t-attf-class="text-end fw-bold #{jb.closing>=0?'':'money-out'}" style="color:#1d4ed8"><t t-if="jb.balance_masked">••••••</t><t t-else=""><t t-esc="jb.closing.toFixed(2)"/></t></td>
               </tr>
+              <t t-if="isJournalRowOpen(jb.journal_id)">
+                <tr class="jb-details-row"><td colspan="6" class="p-0"><div class="jb-details-panel">
+                  <div class="jb-details-header"><span><i class="fa fa-list me-1"/>Transactions in <strong><t t-esc="jb.journal_name"/></strong></span><t t-if="isJournalRowLoading(jb.journal_id)"><span class="text-muted small"><i class="fa fa-spinner fa-spin me-1"/>Loading…</span></t><t t-else=""><span class="text-muted small"><t t-esc="getJournalTransactions(jb.journal_id).length"/> transaction(s)</span></t></div>
+                  <t t-if="isJournalRowLoading(jb.journal_id)"><div class="jb-loading"><i class="fa fa-spinner fa-spin me-1"/>Loading transactions…</div></t>
+                  <t t-elif="getJournalTransactions(jb.journal_id).length"><div class="eagle-table-wrap jb-details-table-wrap"><table class="eagle-table jb-details-table">
+                    <thead><tr><th>Reference</th><th t-if="showDateColumn">Date</th><th>Partner</th><th class="text-end">Deposit</th><th class="text-end">Withdraw</th><th>Status</th></tr></thead><tbody>
+                      <t t-foreach="getJournalTransactions(jb.journal_id)" t-as="tx" t-key="tx.id"><tr><td><a class="link" href="#" t-on-click.prevent.stop="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td><td t-if="showDateColumn"><t t-esc="tx.date"/></td><td><t t-esc="tx.partner"/></td><td class="text-end money-in"><t t-esc="formatAmount(tx.received)"/></td><td class="text-end money-out"><t t-esc="formatAmount(tx.paid)"/></td><td><span t-attf-class="ebadge #{tx.state=='paid'?'ebadge-green':tx.state=='in_process'?'ebadge-yellow':tx.state=='draft'?'ebadge-gray':'ebadge-red'}"><t t-esc="tx.state"/></span><button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2" t-att-disabled="state.validatingPaymentId===tx.id" t-on-click.stop="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment"><i class="fa fa-check"/> Validate</button></td></tr></t>
+                    </tbody><tfoot><tr><td t-att-colspan="showDateColumn?3:2">Total (<t t-esc="getJournalTransactions(jb.journal_id).length"/>)</td><td class="text-end money-in fw-bold"><t t-esc="journalTxReceived(jb.journal_id)"/></td><td class="text-end money-out fw-bold"><t t-esc="journalTxPaid(jb.journal_id)"/></td><td/></tr></tfoot>
+                  </table></div></t>
+                  <t t-else=""><div class="jb-no-transactions"><i class="fa fa-info-circle me-1"/>No payment transactions found for this journal in the selected period.</div></t>
+                </div></td></tr>
+              </t>
             </t>
           </tbody>
           <tfoot><tr>
@@ -513,32 +525,48 @@
     <div class="eagle-card eagle-journal-summary-card">
       <div class="eagle-card-header">
         <h4 class="eagle-card-title"><i class="fa fa-line-chart"/>Journal Balance Summary</h4>
-        <div class="d-flex gap-2 align-items-center"><span class="text-muted small">Previous vs Current balance</span><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleTable('journalSummary')" t-att-aria-expanded="state.tableOpen.journalSummary" title="Show / hide table"><i t-attf-class="fa #{state.tableOpen.journalSummary?'fa-chevron-up':'fa-chevron-down'}"/></button></div>
+        <div class="d-flex gap-2 align-items-center"><span class="text-muted small">Previous, Deposit, Withdraw, Change and New Balance</span><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleTable('journalSummary')" t-att-aria-expanded="state.tableOpen.journalSummary" title="Show / hide table"><i t-attf-class="fa #{state.tableOpen.journalSummary?'fa-chevron-up':'fa-chevron-down'}"/></button></div>
       </div>
       <t t-if="state.tableOpen.journalSummary"><div class="eagle-table-wrap">
         <table class="eagle-table eagle-journal-summary-table">
           <thead>
-            <tr><th>Journal</th><th class="text-end">Previous</th><th class="text-end">Current</th><th class="text-end">Change</th></tr>
+            <tr><th>Journal</th><th class="text-end">Previous</th><th class="text-end">Deposit</th><th class="text-end">Withdraw</th><th class="text-end">Change</th><th class="text-end">New Balance</th></tr>
           </thead>
           <tbody>
             <t t-if="journalSummaryRows.length===0">
-              <tr><td colspan="4" class="text-center text-muted py-4 fst-italic">No bank/cash journals found.</td></tr>
+              <tr><td colspan="6" class="text-center text-muted py-4 fst-italic">No bank/cash journals found.</td></tr>
             </t>
             <t t-foreach="journalSummaryRows" t-as="jr" t-key="jr.journal_id">
-              <tr>
-                <td class="fw-semibold"><t t-esc="jr.journal_name"/></td>
+              <tr class="jb-row-clickable" t-on-click="()=>this.toggleJournalRow(jr.journal_id)" t-att-aria-expanded="isJournalRowOpen(jr.journal_id)" t-att-title="isJournalRowOpen(jr.journal_id) ? 'Click to collapse transactions' : 'Click to show transactions'">
+                <td class="fw-semibold"><button type="button" class="jb-row-toggle" t-on-click.stop="()=>this.toggleJournalRow(jr.journal_id)" t-att-aria-label="isJournalRowOpen(jr.journal_id) ? 'Collapse journal transactions' : 'Expand journal transactions'"><i t-attf-class="fa #{isJournalRowOpen(jr.journal_id)?'fa-chevron-down':'fa-chevron-right'}"/></button><t t-esc="jr.journal_name"/></td>
                 <td class="text-end money"><t t-if="jr.balance_masked">••••••</t><t t-else=""><t t-esc="jr.previous.toFixed(2)"/></t></td>
-                <td t-attf-class="text-end fw-bold #{jr.current>=0?'money-in':'money-out'}"><t t-if="jr.balance_masked">••••••</t><t t-else=""><t t-esc="jr.current.toFixed(2)"/></t></td>
+                <td class="text-end money-in"><t t-esc="jr.deposit.toFixed(2)"/> <span class="text-muted ms-1" style="font-size:10px">(<t t-esc="jr.deposit_count"/>)</span></td>
+                <td class="text-end money-out"><t t-esc="jr.withdraw.toFixed(2)"/> <span class="text-muted ms-1" style="font-size:10px">(<t t-esc="jr.withdraw_count"/>)</span></td>
                 <td t-attf-class="text-end fw-bold #{jr.change>=0?'money-in':'money-out'}"><t t-if="jr.change>=0">+</t><t t-esc="jr.change.toFixed(2)"/></td>
+                <td t-attf-class="text-end fw-bold #{jr.current>=0?'':'money-out'}" style="color:#1d4ed8"><t t-if="jr.balance_masked">••••••</t><t t-else=""><t t-esc="jr.current.toFixed(2)"/></t></td>
               </tr>
+              <t t-if="isJournalRowOpen(jr.journal_id)">
+                <tr class="jb-details-row"><td colspan="6" class="p-0"><div class="jb-details-panel">
+                  <div class="jb-details-header"><span><i class="fa fa-list me-1"/>Transactions in <strong><t t-esc="jr.journal_name"/></strong></span><t t-if="isJournalRowLoading(jr.journal_id)"><span class="text-muted small"><i class="fa fa-spinner fa-spin me-1"/>Loading…</span></t><t t-else=""><span class="text-muted small"><t t-esc="getJournalTransactions(jr.journal_id).length"/> transaction(s)</span></t></div>
+                  <t t-if="isJournalRowLoading(jr.journal_id)"><div class="jb-loading"><i class="fa fa-spinner fa-spin me-1"/>Loading transactions…</div></t>
+                  <t t-elif="getJournalTransactions(jr.journal_id).length"><div class="eagle-table-wrap jb-details-table-wrap"><table class="eagle-table jb-details-table">
+                    <thead><tr><th>Reference</th><th t-if="showDateColumn">Date</th><th>Partner</th><th class="text-end">Deposit</th><th class="text-end">Withdraw</th><th>Status</th></tr></thead><tbody>
+                      <t t-foreach="getJournalTransactions(jr.journal_id)" t-as="tx" t-key="tx.id"><tr><td><a class="link" href="#" t-on-click.prevent.stop="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td><td t-if="showDateColumn"><t t-esc="tx.date"/></td><td><t t-esc="tx.partner"/></td><td class="text-end money-in"><t t-esc="formatAmount(tx.received)"/></td><td class="text-end money-out"><t t-esc="formatAmount(tx.paid)"/></td><td><span t-attf-class="ebadge #{tx.state=='paid'?'ebadge-green':tx.state=='in_process'?'ebadge-yellow':tx.state=='draft'?'ebadge-gray':'ebadge-red'}"><t t-esc="tx.state"/></span><button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2" t-att-disabled="state.validatingPaymentId===tx.id" t-on-click.stop="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment"><i class="fa fa-check"/> Validate</button></td></tr></t>
+                    </tbody><tfoot><tr><td t-att-colspan="showDateColumn?3:2">Total (<t t-esc="getJournalTransactions(jr.journal_id).length"/>)</td><td class="text-end money-in fw-bold"><t t-esc="journalTxReceived(jr.journal_id)"/></td><td class="text-end money-out fw-bold"><t t-esc="journalTxPaid(jr.journal_id)"/></td><td/></tr></tfoot>
+                  </table></div></t>
+                  <t t-else=""><div class="jb-no-transactions"><i class="fa fa-info-circle me-1"/>No payment transactions found for this journal in the selected period.</div></t>
+                </div></td></tr>
+              </t>
             </t>
           </tbody>
           <tfoot>
             <tr>
               <td class="fw-bold">Total</td>
               <td class="text-end money fw-bold"><t t-esc="journalSummaryPrevious"/></td>
-              <td t-attf-class="text-end fw-bold #{journalSummaryCurrentValue>=0?'money-in':'money-out'}"><t t-esc="journalSummaryCurrent"/></td>
+              <td class="text-end money-in fw-bold"><t t-esc="journalSummaryDeposit"/> <span class="text-muted" style="font-size:10px">(<t t-esc="journalSummaryDepositCount"/>)</span></td>
+              <td class="text-end money-out fw-bold"><t t-esc="journalSummaryWithdraw"/> <span class="text-muted" style="font-size:10px">(<t t-esc="journalSummaryWithdrawCount"/>)</span></td>
               <td t-attf-class="text-end fw-bold #{journalSummaryChangePositive?'money-in':'money-out'}"><t t-if="journalSummaryChangePositive">+</t><t t-esc="journalSummaryChange"/></td>
+              <td class="text-end fw-bold" style="color:#1d4ed8"><t t-esc="journalSummaryCurrent"/></td>
             </tr>
           </tfoot>
         </table>

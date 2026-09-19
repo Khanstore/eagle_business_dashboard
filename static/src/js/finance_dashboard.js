@@ -45,6 +45,7 @@ class FinanceDashboard extends Component {
             showPrintModal:false, printInvoiceLines:false, printVendorLines:false,
             printJournalBalance:true, printTxDetails:true,
             tableOpen:{journal:false, journalSummary:false, invoices:false, vendorBills:false, transactions:false},
+            journalRowsOpen:{}, journalRowTransactions:{}, journalRowLoading:{},
             showExportPrompt:false, exportPromptType:'',
             showDrillModal:false, drillTitle:'', drillRows:[], drillJournalId:null,
             showSettings:false, settingsDraft:{}, settingsSaved:false,
@@ -91,6 +92,40 @@ class FinanceDashboard extends Component {
     _setDates(from,to,preset='custom'){this.state.from_date=this._fmt(from);this.state.to_date=this._fmt(to);this.state.active_preset=preset;this._syncShared();this.loadAll();}
     vis(key){return this.state.visibility[key]!==false;}
     toggleTable(key){if(Object.prototype.hasOwnProperty.call(this.state.tableOpen,key)) this.state.tableOpen[key]=!this.state.tableOpen[key];}
+    async toggleJournalRow(journalId){
+        const key=String(journalId);
+        if (this.state.journalRowsOpen[key]) {
+            this.state.journalRowsOpen[key]=false;
+            return;
+        }
+        this.state.journalRowsOpen[key]=true;
+        if (this.state.journalRowTransactions[key] || this.state.journalRowLoading[key]) return;
+        this.state.journalRowLoading[key]=true;
+        try {
+            const rows=await this.orm.call("dashboard.data","get_journal_transactions",[
+                journalId,this.state.from_date||false,this.state.to_date||false
+            ]);
+            this.state.journalRowTransactions[key]=rows||[];
+        } catch(e) {
+            console.error("Journal transaction load error:",e);
+            this.state.journalRowTransactions[key]=[];
+        } finally {
+            this.state.journalRowLoading[key]=false;
+        }
+    }
+    isJournalRowOpen(journalId){return !!this.state.journalRowsOpen[String(journalId)];}
+    isJournalRowLoading(journalId){return !!this.state.journalRowLoading[String(journalId)];}
+    getJournalTransactions(journalId){return this.state.journalRowTransactions[String(journalId)] || [];}
+    journalTxReceived(journalId){
+        return this.getJournalTransactions(journalId).reduce((s,r)=>s+(Number(r.received)||0),0).toFixed(2);
+    }
+    journalTxPaid(journalId){
+        return this.getJournalTransactions(journalId).reduce((s,r)=>s+(Number(r.paid)||0),0).toFixed(2);
+    }
+    formatAmount(value){
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+    }
     get hasMaskedJournalBalances(){return (this.state.journal_balances||[]).some(r=>r.balance_masked);}
 
     // ── Batch 3: presence, theme, command palette, shortcuts ─────────────
@@ -160,6 +195,7 @@ class FinanceDashboard extends Component {
             this.state.vendor_bills = strip(this._vendorLines,  data.vendor_bills||[]);
             this.state.transactions = data.transactions||[];
             this.state.journal_balances = jb||[];
+            this.state.journalRowsOpen={}; this.state.journalRowTransactions={}; this.state.journalRowLoading={};
 
             Object.assign(this.state, {
                 overdue_bills_count:widgets.overdue_bills_count, overdue_bills_amount:widgets.overdue_bills_amount,
@@ -247,6 +283,10 @@ class FinanceDashboard extends Component {
             journal_name: jb.journal_name,
             previous: jb.opening === null ? null : Number(jb.opening || 0),
             current: jb.closing === null ? null : Number(jb.closing || 0),
+            deposit: Number(jb.deposit || 0),
+            deposit_count: Number(jb.deposit_count || 0),
+            withdraw: Number(jb.withdraw || 0),
+            withdraw_count: Number(jb.withdraw_count || 0),
             change: Number(jb.change || 0),
             balance_masked: !!jb.balance_masked,
         }));
@@ -255,6 +295,12 @@ class FinanceDashboard extends Component {
     get journalSummaryCurrentValue() {return this.journalSummaryRows.filter(r=>r.current!==null).reduce((s,r)=>s+r.current,0);}
     get journalSummaryPrevious() {return this.hasMaskedJournalBalances ? '••••••' : this.journalSummaryPreviousValue.toFixed(2);}
     get journalSummaryCurrent() {return this.hasMaskedJournalBalances ? '••••••' : this.journalSummaryCurrentValue.toFixed(2);}
+    get journalSummaryDepositValue() {return this.journalSummaryRows.reduce((s,r)=>s+r.deposit,0);}
+    get journalSummaryDeposit() {return this.journalSummaryDepositValue.toFixed(2);}
+    get journalSummaryDepositCount() {return this.journalSummaryRows.reduce((s,r)=>s+r.deposit_count,0);}
+    get journalSummaryWithdrawValue() {return this.journalSummaryRows.reduce((s,r)=>s+r.withdraw,0);}
+    get journalSummaryWithdraw() {return this.journalSummaryWithdrawValue.toFixed(2);}
+    get journalSummaryWithdrawCount() {return this.journalSummaryRows.reduce((s,r)=>s+r.withdraw_count,0);}
     get journalSummaryChange() {return this.journalSummaryRows.reduce((s,r)=>s+r.change,0).toFixed(2);}
     get journalSummaryChangePositive() {return this.journalSummaryRows.reduce((s,r)=>s+r.change,0)>=0;}
     get currentCashPositive()  {return (this.state.current_cash===null || this.state.current_cash===undefined) ? true : this.state.current_cash>=0;}
@@ -384,7 +430,7 @@ class FinanceDashboard extends Component {
         }
         const styles=Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l=>`<link rel="stylesheet" href="${l.href}">`).join('');
         const mask='••••••';
-        const buildMove=(records,inc)=>{if(!records.length)return'<p style="color:#888">No records.</p>';const hdr=['Invoice/Bill','Partner','Date','Due Date','Amount','Outstanding','Status'].map(h=>`<th style="background:#1a1f36;color:#fff;padding:8px 12px;font-size:11px;text-align:left">${h}</th>`).join('');let html=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px"><thead><tr>${hdr}</tr></thead><tbody>`;for(const r of records){html+=`<tr style="background:#fff"><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.name}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.partner}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.date}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.due_date}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${fmt(r.amount)}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${fmt(r.residual)}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.state}</td></tr>`;if(inc&&r.lines&&r.lines.length){const lh=['Product','Qty','Rate','Disc%','Tax','Total'].map(h=>`<th style="background:#f1f5f9;padding:4px 8px;font-size:10px;text-align:left">${h}</th>`).join('');const lb=r.lines.map(l=>`<tr><td style="padding:4px 8px;font-size:10px">${l.product}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.qty)}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.price_unit)}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.discount)}</td><td style="padding:4px 8px;font-size:10px">${l.tax}</td><td style="padding:4px 8px;font-size:10px;text-align:right;font-weight:700">${fmt(l.subtotal)}</td></tr>`).join('');html+=`<tr><td colspan="7" style="padding:2px 24px 10px"><table style="width:100%;border-collapse:collapse"><thead><tr>${lh}</tr></thead><tbody>${lb}</tbody></table></td></tr>`;}}return html+'</tbody></table>';};
+        const buildMove=(records,inc)=>{if(!records.length)return'<p style="color:#888">No records.</p>';const hdr=['Invoice/Bill','Partner','Date','Due Date','Amount','Outstanding','Status'].map(h=>`<th style="background:#1a1f36;color:#fff;padding:8px 12px;font-size:11px;text-align:left">${h}</th>`).join('');let html=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px"><thead><tr>${hdr}</tr></thead><tbody>`;for(const r of records){html+=`<tr style="background:#fff"><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.name}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.partner}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.date}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.due_date}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${fmt(r.amount)}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${fmt(r.residual)}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.state}</td></tr>`;if(inc&&r.lines&&r.lines.length){const lh=['Product','Qty','Rate','Disc%','Tax','Total'].map((h,i)=>`<th style="background:#f1f5f9;padding:4px 8px;font-size:10px;text-align:${i===0?'left':'right'}">${h}</th>`).join('');const lb=r.lines.map(l=>`<tr><td style="padding:4px 8px;font-size:10px">${l.product}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.qty)}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.price_unit)}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.discount)}</td><td style="padding:4px 8px;font-size:10px">${l.tax}</td><td style="padding:4px 8px;font-size:10px;text-align:right;font-weight:700">${fmt(l.subtotal)}</td></tr>`).join('');html+=`<tr><td colspan="7" style="padding:2px 24px 10px"><table style="width:100%;border-collapse:collapse"><thead><tr>${lh}</tr></thead><tbody>${lb}</tbody></table></td></tr>`;}}return html+'</tbody></table>';};
         const buildJB=rows=>{if(!rows.length)return'';const hdr=['Journal','Prev Balance','Deposit','Withdraw','Change','New Balance'].map(h=>`<th style="background:#1a1f36;color:#fff;padding:8px 12px;font-size:11px">${h}</th>`).join('');const body=rows.map(r=>{const prev=r.balance_masked?mask:fmt(r.opening);const current=r.balance_masked?mask:fmt(r.closing);return`<tr><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${r.journal_name}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${prev}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#059669">${fmt(r.deposit)} (${r.deposit_count})</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#dc2626">${fmt(r.withdraw)} (${r.withdraw_count})</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:${r.change>=0?'#059669':'#dc2626'}">${r.change>=0?'+':''}${fmt(r.change)}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:${r.balance_masked?'#6b7280':(r.closing>=0?'#2563eb':'#dc2626')}">${current}</td></tr>`;}).join('');return`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px"><thead><tr>${hdr}</tr></thead><tbody>${body}</tbody></table>`;};
         const buildTx=rows=>{ const f=rows.filter(r=>r._type!=='subtotal'); if(!f.length)return''; const hdr=['Reference','Partner','Date','Journal','Received','Paid','Status'].map(h=>`<th style="background:#1a1f36;color:#fff;padding:8px 12px;font-size:11px">${h}</th>`).join(''); const body=f.map(r=>`<tr><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.name}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.partner}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.date}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.journal}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#059669">${fmt(r.received)}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#dc2626">${fmt(r.paid)}</td><td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${r.state}</td></tr>`).join(''); return`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px"><thead><tr>${hdr}</tr></thead><tbody>${body}</tbody></table>`;};
         pw.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Finance Dashboard</title>${styles}<style>body{margin:0;padding:20px;font-family:sans-serif}h1{font-size:20px;color:#1a1f36;margin:0 0 4px}h2{font-size:14px;font-weight:700;color:#1a1f36;margin:20px 0 8px;padding-bottom:4px;border-bottom:2px solid #1a1f36}.period{font-size:11px;color:#6b7280;margin-bottom:16px}.mask-note{font-size:10px;color:#6b7280;margin:-4px 0 10px}@media print{@page{margin:10mm;size:A4 landscape}body{font-size:10px;padding:0}}</style></head><body>

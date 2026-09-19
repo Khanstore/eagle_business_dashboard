@@ -203,7 +203,7 @@ class DashboardData(models.AbstractModel):
                      'status': r.state, 'date': f(r.date_order), 'amount': r.amount_total, 'lines': pur_lines(r)} for r in rfq],
             'transactions': [{'id': t.id, 'name': t.name or 'Draft', 'partner': t.partner_id.name or '', 'partner_id': t.partner_id.id,
                               'partner_parent': parent_name(t.partner_id),
-                              'ledger': t.journal_id.name, 'date': f(t.date),
+                              'ledger': t.journal_id.name, 'journal_id': t.journal_id.id, 'date': f(t.date),
                               'received': t.amount if t.payment_type == 'inbound' else 0,
                               'paid': t.amount if t.payment_type == 'outbound' else 0, 'state': t.state} for t in payments],
         }
@@ -631,7 +631,7 @@ class DashboardData(models.AbstractModel):
         payments = self.env['account.payment'].search(domain, order='date desc', limit=300)
         f = self._fmt
         return [{'id': p.id, 'name': p.name or 'Draft', 'partner': p.partner_id.name or '',
-                 'date': f(p.date), 'amount': p.amount, 'type': p.payment_type,
+                 'date': f(p.date), 'journal_id': p.journal_id.id, 'amount': p.amount, 'type': p.payment_type,
                  'received': p.amount if p.payment_type == 'inbound' else 0,
                  'paid': p.amount if p.payment_type == 'outbound' else 0,
                  'state': p.state} for p in payments]
