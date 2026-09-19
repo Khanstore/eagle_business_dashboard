@@ -334,18 +334,21 @@
             </datalist>
             <label class="form-label small text-muted">Product</label>
             <input type="text" class="form-control form-control-sm mb-3"
-                   placeholder="Type to search product..."
+                   placeholder="Type name, internal reference, or barcode..."
                    list="eagle-quick-sale-products"
                    t-model="state.quickSaleProductSearch"
                    t-on-input="onQuickSaleProductInput"/>
             <datalist id="eagle-quick-sale-products">
               <t t-foreach="state.productOptions" t-as="p" t-key="p.id">
-                <option t-att-value="p.name + ' — BDT ' + p.price.toFixed(2) + ' [#' + p.id + ']'"/>
+                <option t-att-value="p.name + (p.default_code ? ' [' + p.default_code + ']' : '') + ' — BDT ' + p.price.toFixed(2) + ' [#' + p.id + ']'"/>
               </t>
             </datalist>
             <t t-if="state.productOptions.length === 0 and !state.quickSaleError">
-              <p class="text-muted small mb-3"><i class="fa fa-spinner fa-spin me-1"/>Loading products...</p>
+              <p class="text-muted small mb-3"><i class="fa fa-spinner fa-spin me-1"/>Searching products...</p>
             </t>
+            <p t-if="state.productOptions.length" class="text-muted small mb-3">
+              <i class="fa fa-search me-1"/>Showing matching active saleable products from the full product catalog.
+            </p>
             <label class="form-label small text-muted">Quantity</label>
             <input type="number" class="form-control form-control-sm" min="1" step="1" t-model="state.quickSaleQty"/>
             <p class="text-muted small mt-2 mb-0"><i class="fa fa-info-circle me-1"/>If the selected partner already has a draft order, this product is added to it. Otherwise a new draft order is created. Either way, it opens in a new tab for review before confirming.</p>

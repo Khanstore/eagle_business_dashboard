@@ -9,19 +9,19 @@ _DEFAULT_VISIBILITY = {
     "admin": {
         "kpi": True, "analytics": True, "chart": True, "operations": True,
         "customers": True, "aging": True, "financial": True, "notes": True,
-        "journal": True, "transactions": True, "clv": True, "quick_search": True,
+        "journal": True, "journal_summary": True, "transactions": True, "clv": True, "quick_search": True,
         "multi_period": True, "settings": True,
     },
     "manager": {
         "kpi": True, "analytics": True, "chart": True, "operations": True,
         "customers": True, "aging": True, "financial": False, "notes": True,
-        "journal": True, "transactions": True, "clv": True, "quick_search": True,
+        "journal": True, "journal_summary": True, "transactions": True, "clv": True, "quick_search": True,
         "multi_period": True, "settings": False,
     },
     "user": {
         "kpi": True, "analytics": False, "chart": False, "operations": False,
         "customers": False, "aging": False, "financial": False, "notes": True,
-        "journal": False, "transactions": True, "clv": False, "quick_search": True,
+        "journal": False, "journal_summary": True, "transactions": True, "clv": False, "quick_search": True,
         "multi_period": False, "settings": False,
     },
 }
@@ -36,6 +36,7 @@ SECTION_LABELS = {
     "financial": "Financial controls (tax, unreconciled)",
     "notes": "Team notes panel",
     "journal": "Journal Balance table",
+    "journal_summary": "Journal Balance Summary (Previous / Current / Change)",
     "transactions": "Transaction table",
     "clv": "Customer Lifetime Value table",
     "quick_search": "Quick search bar",
@@ -59,7 +60,7 @@ class DashboardData(models.AbstractModel):
 
     def _get_user_role(self):
         user = self.env.user
-        if user.has_group('eagle_business_dashboard.group_dashboard_admin'):
+        if user.has_group('eagle_business_dashboard.group_dashboard_admin') or user.has_group('base.group_system'):
             return 'admin'
         if user.has_group('eagle_business_dashboard.group_dashboard_manager'):
             return 'manager'
@@ -79,6 +80,7 @@ class DashboardData(models.AbstractModel):
         default.update(cfg.get(role, {}))
         return {
             'role': role,
+            'can_manage_ledger_security': bool(self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin') or self.env.user.has_group('base.group_system')),
             'visibility': default,
             'section_labels': SECTION_LABELS,
             'all_defaults': _DEFAULT_VISIBILITY,
@@ -86,7 +88,7 @@ class DashboardData(models.AbstractModel):
 
     @api.model
     def save_visibility(self, config):
-        if not self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin'):
+        if not (self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin') or self.env.user.has_group('base.group_system')):
             return False
         self.env['ir.config_parameter'].sudo().set_param(
             'eagle_dashboard.visibility', json.dumps(config))
@@ -537,6 +539,15 @@ class DashboardData(models.AbstractModel):
             ('payment_state', 'not in', ['paid', 'in_payment']), ('invoice_date_due', '<', str(today))])
 
         journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])])
+        security_rules = {r.journal_id.id: r for r in self.env['dashboard.ledger.security'].sudo().search([])}
+        is_dashboard_admin = (
+            self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin')
+            or self.env.user.has_group('base.group_system')
+        )
+        cash_balance_masked = any(
+            bool(r.masked and not (is_dashboard_admin or self.env.user.id in r.approved_user_ids.ids))
+            for r in security_rules.values()
+        )
         account_ids = journals.mapped('default_account_id').ids or [-1]
         self.env.cr.execute("SELECT COALESCE(SUM(aml.debit-aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date<%s",
             (account_ids, str(fom)))
@@ -556,8 +567,11 @@ class DashboardData(models.AbstractModel):
             'overdue_bills_count': len(overdue_bills), 'overdue_bills_amount': round(sum(overdue_bills.mapped('amount_residual')), 2),
             'due_soon_count': len(due_soon_bills), 'due_soon_amount': round(sum(due_soon_bills.mapped('amount_residual')), 2),
             'overdue_inv_count': len(overdue_inv), 'overdue_inv_amount': round(sum(overdue_inv.mapped('amount_residual')), 2),
-            'opening_cash': round(opening_cash, 2), 'month_in': round(month_in, 2),
-            'month_out': round(month_out, 2), 'current_cash': round(opening_cash + month_in - month_out, 2),
+            'opening_cash': None if cash_balance_masked else round(opening_cash, 2),
+            'month_in': None if cash_balance_masked else round(month_in, 2),
+            'month_out': None if cash_balance_masked else round(month_out, 2),
+            'current_cash': None if cash_balance_masked else round(opening_cash + month_in - month_out, 2),
+            'cash_balance_masked': cash_balance_masked,
             'revenue': round(revenue, 2), 'costs': round(costs, 2),
             'gross_profit': round(revenue - costs, 2),
             'margin_pct': round((revenue - costs) / revenue * 100, 1) if revenue else 0,
@@ -567,8 +581,13 @@ class DashboardData(models.AbstractModel):
     @api.model
     def get_journal_balance(self, from_date=False, to_date=False):
         journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])], order='name asc')
+        security_rules = {r.journal_id.id: r for r in self.env['dashboard.ledger.security'].sudo().search([])}
+        is_dashboard_admin = self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin')
         result = []
         for journal in journals:
+            security_rule = security_rules.get(journal.id)
+            approved = bool(security_rule and self.env.user.id in security_rule.approved_user_ids.ids)
+            balance_masked = bool(security_rule and security_rule.masked and not (is_dashboard_admin or approved))
             account = journal.default_account_id
             if not account:
                 continue
@@ -593,10 +612,13 @@ class DashboardData(models.AbstractModel):
             deposit = float(row[0] or 0)
             withdraw = float(row[1] or 0)
             change = deposit - withdraw
+            closing = round(opening + change, 2)
             result.append({'journal_id': journal.id, 'journal_name': journal.name,
-                'opening': round(opening, 2), 'deposit': round(deposit, 2), 'deposit_count': int(row[2] or 0),
+                'opening': None if balance_masked else round(opening, 2),
+                'deposit': round(deposit, 2), 'deposit_count': int(row[2] or 0),
                 'withdraw': round(withdraw, 2), 'withdraw_count': int(row[3] or 0),
-                'change': round(change, 2), 'closing': round(opening + change, 2)})
+                'change': round(change, 2), 'closing': None if balance_masked else closing,
+                'balance_masked': balance_masked, 'can_view_balance': not balance_masked})
         return result
 
     @api.model
@@ -1060,10 +1082,32 @@ class DashboardData(models.AbstractModel):
 
     # ─── Quick Sale (barcode/POS style) ────────────────────────────────────
     @api.model
-    def get_product_options(self):
+    def get_product_options(self, search=''):
+        """Return Quick Sale product suggestions using server-side search.
+
+        The old implementation loaded a fixed 300-product list into the browser,
+        which meant products outside that first page could never be found.
+        Searching is now performed against the full active, saleable product
+        catalog; only a small result window is returned to keep the UI fast.
+        """
+        search = (search or '').strip()
+        domain = [('sale_ok', '=', True), ('active', '=', True)]
+        if search:
+            # Require every search token to match at least one of the common
+            # product lookup fields. This keeps multi-word searches useful while
+            # still allowing product name, internal reference, or barcode lookups.
+            for token in search.split():
+                domain += [
+                    '|', '|',
+                    ('name', 'ilike', token),
+                    ('default_code', 'ilike', token),
+                    ('barcode', 'ilike', token),
+                ]
         products = self.env['product.product'].search(
-            [('sale_ok', '=', True), ('active', '=', True)], limit=300, order='name asc')
-        return [{'id': p.id, 'name': p.display_name, 'price': p.list_price} for p in products]
+            domain, limit=50, order='name asc, id asc')
+        return [{'id': p.id, 'name': p.display_name, 'price': p.list_price,
+                 'default_code': p.default_code or '', 'barcode': p.barcode or ''}
+                for p in products]
 
     @api.model
     def create_quick_sale(self, partner_id, product_id, qty, price_unit=False):
@@ -1216,7 +1260,9 @@ class DashboardData(models.AbstractModel):
             parts.append(f"{fin['overdue_inv_count']} invoice(s) are overdue (BDT {fin['overdue_inv_amount']:.0f})")
         if widgets.get('low_stock'):
             parts.append(f"{len(widgets['low_stock'])} product(s) are running low on stock")
-        if fin.get('current_cash', 0) < 0:
+        if fin.get('cash_balance_masked'):
+            parts.append("some cash balances are protected by ledger visibility settings")
+        elif (fin.get('current_cash') or 0) < 0:
             parts.append("cash balance is currently negative — review outstanding payments")
         if not parts:
             return "Everything looks steady today — no urgent items to flag."

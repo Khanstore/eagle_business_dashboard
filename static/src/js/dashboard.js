@@ -82,6 +82,7 @@ class Dashboard extends Component {
             showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSalePartnerSearch:'', quickSaleProductSearch:'', quickSaleQty:1,
             validatingPaymentId:0,
             productOptions:[], quickSaleError:'', quickSaleSubmitting:false, quickSaleLastResult:'',
+            quickSaleProductSearchSeq:0, quickSaleProductSearchTimer:null,
         });
 
         this._orderLines    = {};
@@ -668,15 +669,32 @@ class Dashboard extends Component {
         this.state.quickSaleQty=1;
         this.state.quickSaleError=''; this.state.quickSaleSubmitting=false;
         this.state.showQuickSale=true;
-        try {
-            this.state.productOptions = await this.orm.call("dashboard.data","get_product_options",[]);
-        } catch(e) {
-            console.error("Failed to load products:", e);
-            this.state.productOptions = [];
-            this.state.quickSaleError = 'Could not load products. Please try again.';
+        await this.searchQuickSaleProducts('');
+    }
+    closeQuickSale() {
+        this.state.showQuickSale=false;
+        if (this.state.quickSaleProductSearchTimer) {
+            clearTimeout(this.state.quickSaleProductSearchTimer);
+            this.state.quickSaleProductSearchTimer = null;
         }
     }
-    closeQuickSale() { this.state.showQuickSale=false; }
+
+    async searchQuickSaleProducts(search='') {
+        const seq = ++this.state.quickSaleProductSearchSeq;
+        try {
+            const results = await this.orm.call(
+                "dashboard.data", "get_product_options", [search || '']
+            );
+            if (seq !== this.state.quickSaleProductSearchSeq || !this.state.showQuickSale) return;
+            this.state.productOptions = results || [];
+        } catch(e) {
+            console.error("Failed to search products:", e);
+            if (seq === this.state.quickSaleProductSearchSeq) {
+                this.state.productOptions = [];
+                this.state.quickSaleError = 'Could not search products. Please try again.';
+            }
+        }
+    }
 
     onQuickSalePartnerInput(ev) {
         const value = (ev.target.value || '').trim();
@@ -691,6 +709,16 @@ class Dashboard extends Component {
         this.state.quickSaleProductSearch = value;
         const match = value.match(/\[#(\d+)\]\s*$/);
         this.state.quickSaleProduct = match ? match[1] : '';
+
+        // Search the entire server-side product catalog instead of a fixed
+        // browser-side list. Debouncing avoids an RPC for every keystroke.
+        if (this.state.quickSaleProductSearchTimer) {
+            clearTimeout(this.state.quickSaleProductSearchTimer);
+        }
+        this.state.quickSaleProductSearchTimer = setTimeout(() => {
+            this.searchQuickSaleProducts(value);
+            this.state.quickSaleProductSearchTimer = null;
+        }, 250);
     }
 
     async submitQuickSale() {

@@ -55,6 +55,114 @@ class DashboardSnoozedProduct(models.Model):
     ]
 
 
+class DashboardLedgerSecurity(models.Model):
+    _name = "dashboard.ledger.security"
+    _description = "Dashboard Ledger Balance Visibility Security"
+    _order = "journal_id"
+
+    journal_id = fields.Many2one(
+        "account.journal", required=True, ondelete="cascade", index=True,
+        domain=[("type", "in", ["bank", "cash"])],
+    )
+    masked = fields.Boolean(
+        string="Mask balances", default=False,
+        help="Mask Previous and Current balances for users who are not approved. Change remains visible to everyone.",
+    )
+    approved_user_ids = fields.Many2many(
+        "res.users",
+        "dashboard_ledger_security_user_rel",
+        "security_id", "user_id",
+        string="Approved Users",
+        domain=[("active", "=", True), ("share", "=", False)],
+        help="Users approved to see the unmasked Previous and Current balances for this journal.",
+    )
+
+    _sql_constraints = [
+        ("journal_uniq", "unique(journal_id)", "Each journal can have only one dashboard balance security rule."),
+    ]
+
+    @api.model
+    def _check_dashboard_admin(self):
+        if not (self.env.user.has_group("eagle_business_dashboard.group_dashboard_admin") or self.env.user.has_group("base.group_system")):
+            from odoo.exceptions import AccessError
+            raise AccessError("Only Dashboard Admins can configure ledger balance visibility.")
+
+    @api.model
+    def sync_journal_rules(self):
+        """Ensure every bank/cash journal has a configuration row.
+
+        This keeps the standalone Ledger Balance Security menu useful even
+        before the Finance Dashboard settings modal has been opened.
+        """
+        self._check_dashboard_admin()
+        journals = self.env["account.journal"].search(
+            [("type", "in", ["bank", "cash"])], order="name asc"
+        )
+        existing = {r.journal_id.id for r in self.search([])}
+        for journal in journals:
+            if journal.id not in existing:
+                self.create({"journal_id": journal.id})
+        return True
+
+    @api.model
+    def get_config(self):
+        self._check_dashboard_admin()
+        self.sync_journal_rules()
+        journals = self.env["account.journal"].search(
+            [("type", "in", ["bank", "cash"])], order="name asc"
+        )
+        users = self.env["res.users"].search(
+            [("active", "=", True), ("share", "=", False)], order="name asc"
+        )
+        rules = {r.journal_id.id: r for r in self.search([])}
+        return {
+            "journals": [
+                {
+                    "id": j.id,
+                    "name": j.name,
+                    "masked": bool(rules[j.id].masked) if j.id in rules else False,
+                    "approved_user_ids": rules[j.id].approved_user_ids.ids if j.id in rules else [],
+                }
+                for j in journals
+            ],
+            "users": [{"id": u.id, "name": u.name} for u in users],
+        }
+
+    @api.model
+    def set_config(self, config):
+        self._check_dashboard_admin()
+        config = config or []
+        allowed_journal_ids = set(self.env["account.journal"].search(
+            [("type", "in", ["bank", "cash"])]
+        ).ids)
+        allowed_user_ids = set(self.env["res.users"].search(
+            [("active", "=", True), ("share", "=", False)]
+        ).ids)
+
+        seen = set()
+        for item in config:
+            journal_id = int(item.get("journal_id") or 0)
+            if journal_id not in allowed_journal_ids or journal_id in seen:
+                continue
+            seen.add(journal_id)
+            user_ids = [
+                int(uid) for uid in (item.get("approved_user_ids") or [])
+                if int(uid) in allowed_user_ids
+            ]
+            vals = {
+                "masked": bool(item.get("masked")),
+                "approved_user_ids": [(6, 0, user_ids)],
+            }
+            rule = self.search([("journal_id", "=", journal_id)], limit=1)
+            if rule:
+                rule.write(vals)
+            elif vals["masked"] or user_ids:
+                self.create(dict(vals, journal_id=journal_id))
+
+        self.search([("journal_id", "not in", list(seen) or [0])]).unlink()
+        return True
+
+
 # ─── Feature batch 3: presence, comments, snapshot links ──────────────────
 
 class DashboardPresence(models.Model):

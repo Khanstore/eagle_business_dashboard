@@ -7,3 +7,5 @@ access_dashboard_snoozed_product_user,dashboard.snoozed.product user,model_dashb
 access_dashboard_presence_user,dashboard.presence user,model_dashboard_presence,base.group_user,1,1,1,1
 access_dashboard_kpi_comment_user,dashboard.kpi.comment user,model_dashboard_kpi_comment,base.group_user,1,1,1,1
 access_dashboard_snapshot_link_user,dashboard.snapshot.link user,model_dashboard_snapshot_link,base.group_user,1,1,1,1
+access_dashboard_ledger_security_admin,dashboard.ledger.security admin,model_dashboard_ledger_security,eagle_business_dashboard.group_dashboard_admin,1,1,1,1
+access_dashboard_ledger_security_system,dashboard.ledger.security system,model_dashboard_ledger_security,base.group_system,1,1,1,1
