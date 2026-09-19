@@ -433,6 +433,23 @@ class Dashboard extends Component {
     openLowStockList(){this._newTab('product.product',[["type","=","consu"],["qty_available","<=",5],["active","=",true]],'Low Stock Products');}
     openProduct(id){this._openTab('product.product',id);}
 
+    async validatePayment(id) {
+        if (this.state.validatingPaymentId) return;
+        this.state.validatingPaymentId = id;
+        try {
+            const result = await this.orm.call('dashboard.data', 'validate_payment', [id]);
+            if (result && result.already_posted && result.message) {
+                window.alert(result.message);
+            }
+            await this.loadAll();
+        } catch (e) {
+            console.error('Payment validation failed:', e);
+            window.alert(e?.data?.message || e?.message || 'Unable to validate this payment.');
+        } finally {
+            this.state.validatingPaymentId = 0;
+        }
+    }
+
     // ── Low stock fold + snooze ──────────────────────────────────────────
     toggleLowStock() { this.state.lowStockExpanded = !this.state.lowStockExpanded; }
     openSnoozeModal(product, ev) {
@@ -633,6 +650,8 @@ class Dashboard extends Component {
     _openTab(model,id){const t=window.open(`/web#model=${model}&id=${id}&view_type=form`,'_blank');if(t)t.focus();}
     openOrder(id)      {this._openTab('sale.order',id); const r=this.state.orders.find(o=>o.id===id)||this.state.quotations.find(o=>o.id===id); this._pushRecentlyViewed('order',id,r?r.name:`Order #${id}`);}
     openPurchase(id)   {this._openTab('purchase.order',id); const r=this.state.purchases.find(o=>o.id===id)||this.state.rfq.find(o=>o.id===id); this._pushRecentlyViewed('purchase',id,r?r.name:`Purchase #${id}`);}
+    openPartner(id)    {this._openTab('res.partner',id); this._pushRecentlyViewed('partner',id,'Partner');}
+    openTransaction(id){this._openTab('account.payment',id); this._pushRecentlyViewed('transaction',id,'Transaction');}
     goToFinanceDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.finance_dashboard_action");}
     goToOperationsDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.operations_dashboard_action");}
 

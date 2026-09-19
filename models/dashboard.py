@@ -623,7 +623,7 @@ class DashboardData(models.AbstractModel):
 
     @api.model
     def get_journal_transactions(self, journal_id, from_date=False, to_date=False):
-        domain = [('journal_id', '=', journal_id), ('state', 'in', ['in_process', 'paid'])]
+        domain = [('journal_id', '=', journal_id), ('state', 'in', ['draft', 'in_process', 'paid'])]
         if from_date:
             domain.append(('date', '>=', from_date))
         if to_date:
