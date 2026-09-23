@@ -1506,16 +1506,45 @@ class DashboardData(models.AbstractModel):
 
         journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])])
         security = self._ledger_security_rules_for_journals(journals)
-        cash_balance_masked = any(info.get('masked') for info in security.values())
-        account_ids = journals.mapped('default_account_id').ids or [-1]
-        self.env.cr.execute("SELECT COALESCE(SUM(aml.debit-aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date<%s",
-            (account_ids, str(fom)))
-        opening_cash = float(self.env.cr.fetchone()[0] or 0)
-        self.env.cr.execute("SELECT COALESCE(SUM(aml.debit),0),COALESCE(SUM(aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date>=%s",
-            (account_ids, str(fom)))
-        row = self.env.cr.fetchone()
-        month_in = float(row[0] or 0)
-        month_out = float(row[1] or 0)
+
+        # Keep the existing cash aggregate calculation basis (journal default
+        # accounts), but remove protected contributors from the amount returned
+        # to an unauthorized user.  When both protected and unprotected
+        # contributors exist, the visible portion is retained and marked with
+        # an asterisk in the UI.  If every contributing account is protected,
+        # the aggregate remains fully masked.
+        account_ids = sorted(set(journals.mapped('default_account_id').ids)) or [-1]
+        protected_account_ids = sorted(set(
+            j.default_account_id.id for j in journals
+            if j.default_account_id and security.get(j.id, {}).get('masked')
+        ))
+        visible_account_ids = [aid for aid in account_ids if aid not in protected_account_ids]
+
+        def _cash_totals(ids):
+            qids = ids or [-1]
+            self.env.cr.execute(
+                "SELECT COALESCE(SUM(aml.debit-aml.credit),0) "
+                "FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id "
+                "WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date<%s",
+                (qids, str(fom)),
+            )
+            opening = float(self.env.cr.fetchone()[0] or 0)
+            self.env.cr.execute(
+                "SELECT COALESCE(SUM(aml.debit),0),COALESCE(SUM(aml.credit),0) "
+                "FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id "
+                "WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date>=%s",
+                (qids, str(fom)),
+            )
+            row = self.env.cr.fetchone()
+            return opening, float(row[0] or 0), float(row[1] or 0)
+
+        opening_cash, month_in, month_out = _cash_totals(account_ids)
+        protected_opening, protected_in, protected_out = _cash_totals(protected_account_ids)
+        cash_balance_partial = bool(protected_account_ids and visible_account_ids)
+        cash_balance_masked = bool(protected_account_ids and not visible_account_ids)
+        visible_opening = opening_cash - protected_opening if cash_balance_partial else opening_cash
+        visible_current = (opening_cash + month_in - month_out) - (protected_opening + protected_in - protected_out) if cash_balance_partial else (opening_cash + month_in - month_out)
+        cash_balance_drilldown_allowed = not bool(protected_account_ids)
 
         self.env.cr.execute("SELECT COALESCE(SUM(amount_total),0) FROM account_move WHERE move_type='out_invoice' AND state='posted' AND invoice_date>=%s", (str(fom),))
         revenue = float(self.env.cr.fetchone()[0] or 0)
@@ -1529,14 +1558,16 @@ class DashboardData(models.AbstractModel):
             # Ledger Balance Security applies to balance values, not to the
             # movement columns. Deposit/In and Withdraw/Out remain visible so
             # users can audit cash movement and transfers. Opening/current
-            # aggregate balances stay protected whenever a contributing
-            # journal is protected, because revealing them could disclose a
-            # protected journal balance by subtraction.
-            'opening_cash': None if cash_balance_masked else round(opening_cash, 2),
+            # Aggregate balances expose only the unprotected contributing
+            # accounts to unauthorized users.  A partial aggregate is marked
+            # in the client with '*'; a fully protected aggregate is withheld.
+            'opening_cash': None if cash_balance_masked else round(visible_opening, 2),
             'month_in': round(month_in, 2),
             'month_out': round(month_out, 2),
-            'current_cash': None if cash_balance_masked else round(opening_cash + month_in - month_out, 2),
+            'current_cash': None if cash_balance_masked else round(visible_current, 2),
             'cash_balance_masked': cash_balance_masked,
+            'cash_balance_partial': cash_balance_partial,
+            'cash_balance_drilldown_allowed': cash_balance_drilldown_allowed,
             'cash_flow_movements_visible': True,
             'revenue': round(revenue, 2), 'costs': round(costs, 2),
             'gross_profit': round(revenue - costs, 2),

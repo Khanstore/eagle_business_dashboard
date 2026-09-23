@@ -231,9 +231,9 @@
     <!-- ══ KPI CARDS ══ -->
     <t t-if="vis('kpi')">
       <div class="eagle-kpi-grid">
-        <div t-attf-class="eagle-kpi-card kpi-teal #{state.cash_balance_masked?'':'clickable'}" t-on-click="openCashBalance">
+        <div t-attf-class="eagle-kpi-card kpi-teal #{state.cash_balance_drilldown_allowed?'clickable':''}" t-on-click="openCashBalance">
           <div class="eagle-kpi-icon"><i class="fa fa-bank"/></div>
-          <div><div t-attf-class="eagle-kpi-val #{currentCashPositive?'':'text-danger'}" style="font-size:1.1rem"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.current_cash.toFixed(0)"/></t></div><div class="eagle-kpi-lbl">Cash Balance <i t-if="!state.cash_balance_masked" class="fa fa-external-link" style="font-size:10px"/></div><div class="eagle-kpi-sub"><t t-if="state.cash_balance_masked">Protected by ledger security</t><t t-else="">BDT this month</t></div></div>
+          <div><div t-attf-class="eagle-kpi-val #{currentCashPositive?'':'text-danger'}" style="font-size:1.1rem"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.current_cash.toFixed(0)"/><t t-if="state.cash_balance_partial">*</t></t></div><div class="eagle-kpi-lbl">Cash Balance <i t-if="state.cash_balance_drilldown_allowed" class="fa fa-external-link" style="font-size:10px"/></div><div class="eagle-kpi-sub"><t t-if="state.cash_balance_masked">Protected by ledger security</t><t t-elif="state.cash_balance_partial">BDT this month · * excludes protected ledger(s)</t><t t-else="">BDT this month</t></div></div>
         </div>
         <div class="eagle-kpi-card kpi-red clickable" t-on-click="openOverdueInvoices">
           <div class="eagle-kpi-icon"><i class="fa fa-exclamation-triangle"/></div>
@@ -256,12 +256,12 @@
         <div class="eagle-card">
           <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-money"/>Cash Flow (This Month)</h4></div>
           <div class="eagle-cashflow" style="border-radius:0;box-shadow:none;margin-bottom:0">
-            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Opening</div><div class="eagle-cf-val" style="color:#374151"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.opening_cash.toFixed(2)"/></t></div></div>
+            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Opening</div><div class="eagle-cf-val" style="color:#374151"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.opening_cash.toFixed(2)"/><t t-if="state.cash_balance_partial">*</t></t></div></div>
             <div class="eagle-cf-item"><div class="eagle-cf-lbl">In</div><div class="eagle-cf-val" style="color:#059669">+<t t-esc="state.month_in.toFixed(2)"/></div></div>
             <div class="eagle-cf-item"><div class="eagle-cf-lbl">Out</div><div class="eagle-cf-val" style="color:#dc2626">-<t t-esc="state.month_out.toFixed(2)"/></div></div>
-            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Balance</div><div t-attf-class="eagle-cf-val #{currentCashPositive?'':'text-danger'}" style="font-size:1.1rem;font-weight:900"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.current_cash.toFixed(2)"/></t></div></div>
+            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Balance</div><div t-attf-class="eagle-cf-val #{currentCashPositive?'':'text-danger'}" style="font-size:1.1rem;font-weight:900"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.current_cash.toFixed(2)"/><t t-if="state.cash_balance_partial">*</t></t></div></div>
           </div>
-          <div class="text-muted small px-3 py-2 border-top"><i class="fa fa-info-circle me-1"/>Cash movements (In/Out) remain visible for transfer checking. Opening and Balance are masked when protected ledgers contribute to the aggregate.</div>
+          <div class="text-muted small px-3 py-2 border-top"><i class="fa fa-info-circle me-1"/>Cash movements (In/Out) remain visible for transfer checking. When some ledgers are protected, Opening/Balance show the unprotected portion and are marked with *; if all contributing ledgers are protected, the aggregate remains masked.</div>
         </div>
         <div class="eagle-card">
           <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-calculator"/>P &amp; L Summary (This Month)</h4></div>

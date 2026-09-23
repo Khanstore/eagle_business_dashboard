@@ -26,7 +26,7 @@ class FinanceDashboard extends Component {
             invoices:[], vendor_bills:[], transactions:[], journal_balances:[],
             overdue_bills_count:0, overdue_bills_amount:0, due_soon_count:0, due_soon_amount:0,
             overdue_inv_count:0, overdue_inv_amount:0,
-            opening_cash:0, month_in:0, month_out:0, current_cash:0, cash_balance_masked:false,
+            opening_cash:0, month_in:0, month_out:0, current_cash:0, cash_balance_masked:false, cash_balance_partial:false, cash_balance_drilldown_allowed:true,
             revenue:0, costs:0, gross_profit:0, margin_pct:0,
             trend_data:[], aging:{ar:[],ap:[]},
             financial:{tax_collected:0,tax_paid:0,tax_net:0,unreconciled_count:0,
@@ -211,7 +211,7 @@ class FinanceDashboard extends Component {
                 due_soon_count:widgets.due_soon_count, due_soon_amount:widgets.due_soon_amount,
                 overdue_inv_count:widgets.overdue_inv_count, overdue_inv_amount:widgets.overdue_inv_amount,
                 opening_cash:widgets.opening_cash, month_in:widgets.month_in,
-                month_out:widgets.month_out, current_cash:widgets.current_cash, cash_balance_masked:!!widgets.cash_balance_masked,
+                month_out:widgets.month_out, current_cash:widgets.current_cash, cash_balance_masked:!!widgets.cash_balance_masked, cash_balance_partial:!!widgets.cash_balance_partial, cash_balance_drilldown_allowed:widgets.cash_balance_drilldown_allowed !== false,
                 revenue:widgets.revenue, costs:widgets.costs,
                 gross_profit:widgets.gross_profit, margin_pct:widgets.margin_pct,
                 trend_data:trend||[], aging:aging||{ar:[],ap:[]},
@@ -521,7 +521,7 @@ class FinanceDashboard extends Component {
             .then(actionId=>{const t=window.open(`/odoo/action-${actionId}`,'_blank');if(t)t.focus();})
             .catch(e=>console.error(e));
     }
-    openCashBalance(){if(this.state.cash_balance_masked)return;this._newTab('account.move.line',[["journal_id.type","in",["bank","cash"]],["move_id.state","=","posted"]],'Bank & Cash Journal Items');}
+    openCashBalance(){if(!this.state.cash_balance_drilldown_allowed)return;this._newTab('account.move.line',[["journal_id.type","in",["bank","cash"]],["move_id.state","=","posted"]],'Bank & Cash Journal Items');}
     openOverdueInvoices(){this._newTab('account.move',[["move_type","=","out_invoice"],["state","=","posted"],["payment_state","not in",["paid","in_payment"]],["invoice_date_due","<",this._today()]],'Overdue Invoices');}
     openOverdueBills(){this._newTab('account.move',[["move_type","=","in_invoice"],["state","=","posted"],["payment_state","not in",["paid","in_payment"]],["invoice_date_due","<",this._today()]],'Overdue Vendor Bills');}
     openDueSoonBills(){const d7=new Date();d7.setDate(d7.getDate()+7);this._newTab('account.move',[["move_type","=","in_invoice"],["state","=","posted"],["payment_state","not in",["paid","in_payment"]],["invoice_date_due",">=",this._today()],["invoice_date_due","<=",d7.toISOString().split('T')[0]]],'Bills Due in 7 Days');}

@@ -17,3 +17,8 @@
 - Server limits Quick Sale results to 30 active saleable products.
 - Quick Sale server validates active and saleable product status.
 - User and Developer Manuals regenerated as informational references.
+
+## 18.0.10.28
+- Unauthorized users now see the unprotected portion of Cash Balance, Opening, and Balance when protected and unprotected ledger contributions coexist.
+- Partial aggregates are marked with `*`; fully protected aggregates remain masked.
+- Cash Balance drill-down is disabled whenever protected ledger contributions exist, preventing protected journal items from being exposed.
