@@ -1198,8 +1198,8 @@
             <th t-if="showDateColumn" class="sortable" t-on-click="()=>this.sortTransactions('date')">Date <i t-attf-class="fa #{state.sortKey=='date'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
             <th class="sortable" t-on-click="()=>this.sortTransactions('partner')">Partner <i t-attf-class="fa #{state.sortKey=='partner'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
             <th class="sortable" t-on-click="()=>this.sortTransactions('ledger')">Ledger <i t-attf-class="fa #{state.sortKey=='ledger'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
-            <th class="sortable text-end" t-on-click="()=>this.sortTransactions('received')">Received <i t-attf-class="fa #{state.sortKey=='received'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
-            <th class="sortable text-end" t-on-click="()=>this.sortTransactions('paid')">Paid <i t-attf-class="fa #{state.sortKey=='paid'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th class="sortable text-end" t-on-click="()=>this.sortTransactions('received')">Receive <i t-attf-class="fa #{state.sortKey=='received'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
+            <th class="sortable text-end" t-on-click="()=>this.sortTransactions('paid')">Send <i t-attf-class="fa #{state.sortKey=='paid'?(state.sortOrder=='asc'?'fa-sort-asc':'fa-sort-desc'):'fa-sort'}"/></th>
             <th>Status</th>
           </tr></thead>
           <tbody>

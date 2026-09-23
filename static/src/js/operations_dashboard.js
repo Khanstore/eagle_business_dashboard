@@ -36,8 +36,11 @@ class OperationsDashboard extends Component {
             statusFilter: "",
             showPrintModal: false,
             printOrderLines: true,
+            printQuotationLines: true,
             printPurchaseLines: false,
+            printRfqLines: false,
             printTransactions: true,
+            printModalMode: "all",
             companyName: "", companyId: 0,
             darkMode: false,
             onlineUsers: [],
@@ -227,6 +230,43 @@ class OperationsDashboard extends Component {
     openPurchase(id) { this._openTab("purchase.order", id); }
     openPartner(id) { this._openTab("res.partner", id); }
     openTransaction(id) { this._openTab("account.payment", id); }
+
+    newSaleOrder() {
+        this.action.doAction({
+            type: "ir.actions.act_window",
+            name: "New Sales Order",
+            res_model: "sale.order",
+            views: [[false, "form"]],
+            target: "current",
+            context: { default_state: "draft" },
+        });
+    }
+
+    newPurchaseOrder() {
+        this.action.doAction({
+            type: "ir.actions.act_window",
+            name: "New Purchase Order",
+            res_model: "purchase.order",
+            views: [[false, "form"]],
+            target: "current",
+            context: { default_state: "draft" },
+        });
+    }
+
+    async createPayment(type) {
+        const partnerType = type === "inbound" ? "customer" : "supplier";
+        await this.action.doAction({
+            type: "ir.actions.act_window",
+            name: type === "inbound" ? "Receive Money" : "Send Money",
+            res_model: "account.payment",
+            views: [[false, "form"]],
+            target: "current",
+            context: {
+                default_payment_type: type,
+                default_partner_type: partnerType,
+            },
+        });
+    }
     async validatePayment(id) {
         try {
             await this.orm.call("dashboard.data", "validate_payment", [id]);
@@ -257,12 +297,40 @@ class OperationsDashboard extends Component {
         if (this._quickSaleDialog) this._quickSaleDialog.close();
     }
 
-    openPrintModal() { this.state.showPrintModal = true; }
+    get printModalTitle() {
+        if (this.state.printModalMode === "sales") return "Print Sales & Quotations";
+        if (this.state.printModalMode === "purchases") return "Print Purchases & RFQs";
+        return "Print Operation Dashboard";
+    }
+    openPrintModal() {
+        this.state.printModalMode = "all";
+        this.state.printOrderLines = true;
+        this.state.printQuotationLines = true;
+        this.state.printPurchaseLines = false;
+        this.state.printRfqLines = false;
+        this.state.printTransactions = true;
+        this.state.showPrintModal = true;
+    }
+    openSalesPrintWizard() {
+        this.state.printModalMode = "sales";
+        this.state.printOrderLines = true;
+        this.state.printQuotationLines = true;
+        this.state.showPrintModal = true;
+    }
+    openPurchasePrintWizard() {
+        this.state.printModalMode = "purchases";
+        this.state.printPurchaseLines = true;
+        this.state.printRfqLines = true;
+        this.state.showPrintModal = true;
+    }
     closePrintModal() { this.state.showPrintModal = false; }
     doPrint() {
+        const mode = this.state.printModalMode || "all";
         const incOrder = this.state.printOrderLines;
+        const incQuotation = this.state.printQuotationLines;
         const incPurchase = this.state.printPurchaseLines;
-        const incTx = this.state.printTransactions;
+        const incRfq = this.state.printRfqLines;
+        const incTx = mode === "all" && this.state.printTransactions;
         const fmt = (value) => { const n = parseFloat(value); return Number.isFinite(n) ? n.toFixed(2) : "0.00"; };
         const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
         const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map((l) => `<link rel="stylesheet" href="${l.href}">`).join("");
@@ -283,7 +351,7 @@ class OperationsDashboard extends Component {
                 ? [["Reference", "name"], ["Partner", "partner"], ["Date", "date"], ["Status", "status"], ["Invoice Status", "invoice_status"], ["Amount", "amount"]]
                 : kind === "purchases" || kind === "rfq"
                     ? [["Reference", "name"], ["Vendor", "partner"], ["Date", "date"], ["Status", "status"], ["Billing Status", "billing_status"], ["Amount", "amount"]]
-                    : [["Reference", "name"], ["Date", "date"], ["Partner", "partner"], ["Journal", "ledger"], ["Received", "received"], ["Paid", "paid"], ["Status", "state"]];
+                    : [["Reference", "name"], ["Date", "date"], ["Partner", "partner"], ["Journal", "ledger"], ["Receive", "received"], ["Send", "paid"], ["Status", "state"]];
             const head = cols.map(([label]) => `<th>${label}</th>`).join("");
             const body = records.map((r) => {
                 const cells = cols.map(([label, key]) => {
@@ -300,10 +368,8 @@ class OperationsDashboard extends Component {
         if (!pw) return;
         this.state.showPrintModal = false;
         pw.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Operation Dashboard</title>${styles}<style>body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#111827}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:20px 0 8px;padding-bottom:5px;border-bottom:2px solid #1f2937}.period{color:#6b7280;font-size:12px;margin-bottom:12px}.muted{color:#6b7280;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px}th{background:#1a1f36;color:#fff;text-align:left;padding:7px 9px}td{padding:7px 9px;border-bottom:1px solid #e5e7eb}.num{text-align:right;font-variant-numeric:tabular-nums}.strong{font-weight:700}.line-table{margin:0;border:1px solid #dbe3ee;font-size:10px}.line-table th{background:#eef2f7;color:#374151}.line-table td{padding:5px 7px}@media print{@page{size:A4 landscape;margin:10mm}body{padding:0}}</style></head><body><h1>Operation Dashboard</h1><div class="period">Period: ${esc(this.state.from_date || "All")} — ${esc(this.state.to_date || "All")}</div>
-            <h2>Sales (${orders.length})</h2>${buildTable(orders, "sales", incOrder)}
-            <h2>Quotations (${quotations.length})</h2>${buildTable(quotations, "quotes", incOrder)}
-            <h2>Purchase (${purchases.length})</h2>${buildTable(purchases, "purchases", incPurchase)}
-            <h2>RFQ (${rfq.length})</h2>${buildTable(rfq, "rfq", incPurchase)}
+            ${mode !== "purchases" ? `<h2>Sales (${orders.length})</h2>${buildTable(orders, "sales", incOrder)}<h2>Quotations (${quotations.length})</h2>${buildTable(quotations, "quotes", incQuotation)}` : ""}
+            ${mode !== "sales" ? `<h2>Purchase (${purchases.length})</h2>${buildTable(purchases, "purchases", incPurchase)}<h2>RFQ (${rfq.length})</h2>${buildTable(rfq, "rfq", incRfq)}` : ""}
             ${incTx ? `<h2>Transactions (${txs.length})</h2>${buildTable(txs, "transactions", false)}` : ""}
             </body></html>`);
         pw.document.close();
@@ -313,7 +379,13 @@ class OperationsDashboard extends Component {
     exportRows(rows, filename) {
         if (!rows.length) return;
         const cols = ["Reference", "Partner", "Date", "Status", "Amount"];
-        const csv = [cols.join(","), ...rows.map(r => [r.name, r.partner, r.date, r.status || r.state, r.amount].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
+        const csv = [cols.join(","), ...rows.map(r => {
+            const amount = Number.isFinite(Number(r.amount)) ? Number(r.amount).toFixed(2)
+                : (Number.isFinite(Number(r.received)) ? Number(r.received).toFixed(2)
+                : (Number.isFinite(Number(r.paid)) ? Number(r.paid).toFixed(2) : ""));
+            return [r.name, r.partner, r.date, r.status || r.state, amount]
+                .map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",");
+        })].join("\n");
         const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
@@ -326,8 +398,26 @@ class OperationsDashboard extends Component {
     exportPurchases() { this.exportRows(this.filteredPurchases, "purchases.csv"); }
     exportRfq() { this.exportRows(this.filteredRfq, "rfq.csv"); }
     exportTransactions() {
-        const rows = this.filteredTransactions.map(r => ({...r, status: r.state}));
-        this.exportRows(rows, "transactions.csv");
+        const rows = this.filteredTransactions;
+        if (!rows.length) return;
+        const csvRows = rows.map(r => ({
+            Reference: r.name || "",
+            Partner: r.partner || "",
+            Date: r.date || "",
+            Journal: r.ledger || "",
+            Receive: Number.isFinite(Number(r.received)) ? Number(r.received).toFixed(2) : "",
+            Send: Number.isFinite(Number(r.paid)) ? Number(r.paid).toFixed(2) : "",
+            Status: r.state || "",
+        }));
+        const cols = ["Reference", "Partner", "Date", "Journal", "Receive", "Send", "Status"];
+        const quote = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+        const csv = [cols.join(","), ...csvRows.map(r => cols.map(c => quote(r[c])).join(","))].join("\n");
+        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "transactions.csv";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 0);
     }
     goToBusinessDashboard() { this._syncShared(); this.action.doAction("eagle_business_dashboard.advanced_dashboard_action"); }
     goToFinanceDashboard() { this._syncShared(); this.action.doAction("eagle_business_dashboard.finance_dashboard_action"); }

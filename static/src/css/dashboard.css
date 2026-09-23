@@ -42,14 +42,52 @@
 .eagle-header-actions .eagle-header-action-btn i { color:inherit; }
 
 /* ── Payment form direction theme ───────────────────────────────────────── */
-/* Presentation only. Standard Odoo account.payment workflow and permissions
-   are unchanged. Send/outbound = light red; Receive/inbound = light green. */
-.eagle-payment-send-form,
-.eagle-payment-send-form .o_form_sheet_bg { background:#fff1f2 !important; }
-.eagle-payment-send-form .o_form_sheet { background:#fffafa !important; }
-.eagle-payment-receive-form,
-.eagle-payment-receive-form .o_form_sheet_bg { background:#f0fdf4 !important; }
-.eagle-payment-receive-form .o_form_sheet { background:#fbfffc !important; }
+/* Primary implementation: CSS reacts directly to the checked payment_type radio. */
+.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked),
+.o_form_view:has(input[type="radio"][value="outbound"]:checked) {
+  background:#fff1f2 !important;
+}
+.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked) .o_form_sheet_bg,
+.o_form_view:has(input[type="radio"][value="outbound"]:checked) .o_form_sheet_bg,
+.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked) .o_form_nosheet,
+.o_form_view:has(input[type="radio"][value="outbound"]:checked) .o_form_nosheet {
+  background:#fff1f2 !important;
+}
+.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked) .o_form_sheet,
+.o_form_view:has(input[type="radio"][value="outbound"]:checked) .o_form_sheet {
+  background:#fff7f8 !important;
+  box-shadow:inset 0 0 0 2px #fecdd3 !important;
+}
+.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked),
+.o_form_view:has(input[type="radio"][value="inbound"]:checked) {
+  background:#f0fdf4 !important;
+}
+.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked) .o_form_sheet_bg,
+.o_form_view:has(input[type="radio"][value="inbound"]:checked) .o_form_sheet_bg,
+.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked) .o_form_nosheet,
+.o_form_view:has(input[type="radio"][value="inbound"]:checked) .o_form_nosheet {
+  background:#f0fdf4 !important;
+}
+.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked) .o_form_sheet,
+.o_form_view:has(input[type="radio"][value="inbound"]:checked) .o_form_sheet {
+  background:#f7fff9 !important;
+  box-shadow:inset 0 0 0 2px #bbf7d0 !important;
+}
+/* Fallback classes for DOM variants where the radio is not under the form root. */
+body.eagle-payment-send-active .o_form_view.eagle-payment-form,
+body.eagle-payment-send-active .o_form_view { background:#fff1f2 !important; }
+body.eagle-payment-send-active .o_form_sheet_bg,
+body.eagle-payment-send-active .o_form_nosheet { background:#fff1f2 !important; }
+body.eagle-payment-send-active .o_form_sheet {
+  background:#fff7f8 !important; box-shadow:inset 0 0 0 2px #fecdd3 !important;
+}
+body.eagle-payment-receive-active .o_form_view.eagle-payment-form,
+body.eagle-payment-receive-active .o_form_view { background:#f0fdf4 !important; }
+body.eagle-payment-receive-active .o_form_sheet_bg,
+body.eagle-payment-receive-active .o_form_nosheet { background:#f0fdf4 !important; }
+body.eagle-payment-receive-active .o_form_sheet {
+  background:#f7fff9 !important; box-shadow:inset 0 0 0 2px #bbf7d0 !important;
+}
 
 /* ── KPI Cards ──────────────────────────────────────────────────────────── */
 .eagle-kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px; margin-bottom:20px; }

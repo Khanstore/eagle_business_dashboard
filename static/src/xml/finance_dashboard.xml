@@ -104,7 +104,7 @@
           <t t-if="state.drillRows.length===0"><div class="text-center text-muted py-5"><i class="fa fa-spinner fa-spin fa-2x mb-3 d-block"/>Loading...</div></t>
           <t t-if="state.drillRows.length>0">
             <div class="eagle-table-wrap"><table class="eagle-table">
-              <thead><tr><th>Reference</th><th>Partner</th><th>Date</th><th class="text-end">Received</th><th class="text-end">Paid</th><th>Status</th></tr></thead>
+              <thead><tr><th>Reference</th><th>Partner</th><th>Date</th><th class="text-end">Receive</th><th class="text-end">Send</th><th>Status</th></tr></thead>
               <tbody>
                 <t t-foreach="state.drillRows" t-as="dr" t-key="dr.id"><tr>
                   <td><a class="link" href="#" t-on-click.prevent="()=>this.openTransaction(dr.id)"><t t-esc="dr.name"/></a></td>

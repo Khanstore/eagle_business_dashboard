@@ -1,6 +1,6 @@
 {
     "name": "Advanced Business Dashboard",
-    "version": "18.0.10.28",
+    "version": "18.0.10.35",
     "author": "SM Ashraf",
     "depends": ["sale", "purchase", "account", "web", "stock", "mail"],
     "data": [

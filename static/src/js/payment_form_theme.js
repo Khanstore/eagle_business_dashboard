@@ -1,44 +1,45 @@
 /** @odoo-module **/
 
-import { patch } from "@web/core/utils/patch";
-import { onMounted, onPatched, onWillUnmount } from "@odoo/owl";
-import { FormRenderer } from "@web/views/form/form_renderer";
+const SEND = "outbound";
+const RECEIVE = "inbound";
 
-/**
- * Lightly tint the standard Odoo Payment form according to payment direction.
- *
- * The accounting/payment workflow itself is unchanged. This is presentation only:
- * outbound/send payments use a light red background and inbound/receive payments
- * use a light green background. The class is recomputed after every render so the
- * color follows the selected Payment Type on both new and existing payments.
- */
-patch(FormRenderer.prototype, {
-    setup() {
-        super.setup();
-        this._eaglePaymentType = null;
-        this._eagleApplyPaymentTheme = () => {
-            const record = this.props?.record;
-            const isPayment = record?.resModel === "account.payment";
-            const paymentType = isPayment ? record?.data?.payment_type : null;
-            const root = this.el;
-            if (!root) {
-                return;
-            }
+function findCheckedPaymentType() {
+    return document.querySelector(
+        '.o_form_view input[type="radio"][name="payment_type"]:checked,' +
+        '.o_form_view input[type="radio"][value="outbound"]:checked,' +
+        '.o_form_view input[type="radio"][value="inbound"]:checked'
+    );
+}
 
-            const isSend = paymentType === "outbound";
-            const isReceive = paymentType === "inbound";
-            this._eaglePaymentType = isPayment && (isSend || isReceive) ? paymentType : null;
+function applyPaymentFallback() {
+    const body = document.body;
+    if (!body) return;
+    body.classList.remove("eagle-payment-send-active", "eagle-payment-receive-active");
+    const checked = findCheckedPaymentType();
+    if (!checked || (checked.value !== SEND && checked.value !== RECEIVE)) return;
+    const root = checked.closest?.(".o_form_view");
+    if (!root) return;
+    root.classList.add("eagle-payment-form");
+    const isSend = checked.value === SEND;
+    body.classList.toggle("eagle-payment-send-active", isSend);
+    body.classList.toggle("eagle-payment-receive-active", !isSend);
+}
 
-            root.classList.toggle("eagle-payment-send-form", isSend);
-            root.classList.toggle("eagle-payment-receive-form", isReceive);
-        };
+function schedulePaymentFallback() {
+    window.requestAnimationFrame(applyPaymentFallback);
+}
 
-        onMounted(() => this._eagleApplyPaymentTheme());
-        onPatched(() => this._eagleApplyPaymentTheme());
-        onWillUnmount(() => {
-            if (this.el) {
-                this.el.classList.remove("eagle-payment-send-form", "eagle-payment-receive-form");
-            }
-        });
-    },
-});
+if (!window.__eaglePaymentThemeV33Installed) {
+    window.__eaglePaymentThemeV33Installed = true;
+    document.addEventListener("change", (ev) => {
+        if (ev.target?.matches?.(
+            'input[type="radio"][name="payment_type"],' +
+            'input[type="radio"][value="outbound"],' +
+            'input[type="radio"][value="inbound"]'
+        )) schedulePaymentFallback();
+    }, true);
+    document.addEventListener("DOMContentLoaded", schedulePaymentFallback, { once: true });
+    const observer = new MutationObserver(schedulePaymentFallback);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    schedulePaymentFallback();
+}
