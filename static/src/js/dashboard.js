@@ -1,8 +1,10 @@
 /** @odoo-module **/
 import { registry } from "@web/core/registry";
-import { Component, onWillStart, onWillDestroy, onMounted, useState } from "@odoo/owl";
+import { Component, onWillStart, onWillDestroy, onMounted, onPatched, useState } from "@odoo/owl";
+import { enhanceEagleTables } from "./table_tools";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
+import { EagleQuickSaleDialog } from "./quick_sale_dialog";
 
 class Dashboard extends Component {
     setup() {
@@ -33,8 +35,27 @@ class Dashboard extends Component {
             customers:{new:0,returning:0,total:0,clv:[]},
             financial:{tax_collected:0,tax_paid:0,tax_net:0,unreconciled_count:0,
                        current_sales:0,previous_sales:0,last_year_sales:0},
+            // Stage 2 + 3 management analytics
+            management:{sales_performance:{},product_profitability:[],inventory_risk:[]},
+            warehouseComparison:[],
+            dailyClosing:{date:'',sales_orders:0,sales_amount:0,customer_payments:0,customer_received:0,
+                           vendor_payments:0,vendor_paid:0,customer_invoices:0,customer_invoice_amount:0,
+                           vendor_bills:0,vendor_bill_amount:0,deliveries_done:0,receipts_done:0,
+                           internal_transfers_done:0,draft_payments:0,pending_deliveries:0,pending_receipts:0,
+                           net_cash_movement:0,journal_moves:[]},
+            stageTablesOpen:{product_profitability:false,inventory_risk:false,warehouse_comparison:false,daily_journal_moves:false},
+            dailyClosingDate: new Date().toISOString().split('T')[0],
+            // Stage 4 control center
+            actionCenter:{cards:[],total_open:0,critical:0,as_of:''},
+            stage4Open:{action_center:false},
+            executive:{role:'user',company:'',generated_at:'',what_changed:{},exceptions:{open:0,critical:0},data_quality:{total_flags:0,checks:[]},anomalies:[],audit:[],reorder:[]},
+            executiveOpen:false,
+            ultimate:{can_manage:false,period:{from_date:'',to_date:''},today_change:{},salespeople:[],margin_watch:[],returns:{count:0,amount:0,rate_pct:null,top_products:[]},customer_risk:[],reconciliation:{unreconciled_count:0,unreconciled_amount:0,in_process_count:0,in_process_amount:0},data_quality:{missing_product_barcode:0,missing_product_category:0,non_positive_sale_price:0,negative_stock_quants:0,customer_missing_email:0},approval_queue:{sales:[],purchases:[],sale_threshold:0,purchase_threshold:0}},
+            ultimateOpen:false, ultimateTablesOpen:{salespeople:false,margin_watch:false,returns:false,customer_risk:false,reconciliation:false,data_quality:false,approvals:false},
             // Visibility & access
             role:'user', visibility:{}, section_labels:{}, all_defaults:{},
+            dataTotals:{quotations:0,orders:0,purchases:0,rfq:0,transactions:0},
+            dataPageLimits:{orders:100,purchases:100,transactions:200,lines:30},
             // Filters
             from_date:sharedFilterState.from_date, to_date:sharedFilterState.to_date,
             partner_filter:sharedFilterState.partner_filter,
@@ -57,6 +78,10 @@ class Dashboard extends Component {
             showTargetModal:false, targetInput:'',
             // Settings panel
             showSettings:false, settingsDraft:{}, settingsSaved:false,
+            showCustomize:false, customizeDraft:{}, customizeSaved:false, customizeBusy:false,
+            userPrefs:{density:'comfortable',hidden_sections:[],collapse_on_load:true,show_hints:true,keyboard_shortcuts:true,refresh_mins:5,auto_refresh:false,dark_mode:false,accent_color:'#4f5bd5',workspace:'all'},
+            showHealth:false, health:{allowed:false,checks:[],generated_at:''}, healthLoading:false,
+            loading:false, lastUpdated:'', loadErrors:[],
             approvalThresholds:{sale_threshold:0,purchase_threshold:0},
             // Auto-refresh
             autoRefresh:false, refreshMins:5,
@@ -79,10 +104,12 @@ class Dashboard extends Component {
             showKpiComments:false, activeKpiKey:'', activeKpiLabel:'', kpiComments:[], newCommentText:'',
             showShareModal:false, shareUrl:'',
             savedFilters:[], showSaveFilterPrompt:false, filterNameInput:'',
-            showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSalePartnerSearch:'', quickSaleProductSearch:'', quickSaleQty:1,
+            quickSaleLastResult:'',
             validatingPaymentId:0,
-            productOptions:[], quickSaleError:'', quickSaleSubmitting:false, quickSaleLastResult:'',
+            
         });
+
+        this._quickSaleDialog = null;
 
         this._orderLines    = {};
         this._purchaseLines = {};
@@ -95,19 +122,32 @@ class Dashboard extends Component {
         try { this.state.darkMode = localStorage.getItem('eagle_dark_mode') === '1'; } catch(e) {}
         try { this.state.recentlyViewed = JSON.parse(localStorage.getItem('eagle_recent_business') || '[]'); } catch(e) {}
 
+
         onWillStart(async () => {
+            // Keep first paint small. Heavy analytics are loaded after the core
+            // dashboard is visible so large databases do not block the browser.
+            await this.loadUserPreferences();
             await this.loadAll();
             await this.loadSavedFilters();
-            await this.loadAttractivePack();
         });
         onMounted(() => {
+            queueMicrotask(() => {
+                this.loadAttractivePack();
+                this.loadDeferredAnalytics();
+            });
             this._injectPwaManifest();
             this._keydownHandler = (ev) => this._onKeyDown(ev);
             window.addEventListener('keydown', this._keydownHandler);
             this.heartbeatNow();
             this._heartbeatTimer = setInterval(() => this.heartbeatNow(), 30000);
+            if (this.state.autoRefresh) this._startRefresh();
+            enhanceEagleTables(this.el, 'business');
+        });
+        onPatched(() => {
+            enhanceEagleTables(this.el, 'business');
         });
         onWillDestroy(() => {
+            if (this._quickSaleDialog) this._quickSaleDialog.close();
             this._stopRefresh();
             if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
             if (this._keydownHandler) window.removeEventListener('keydown', this._keydownHandler);
@@ -128,7 +168,17 @@ class Dashboard extends Component {
         this.state.from_date=this._fmt(from); this.state.to_date=this._fmt(to);
         this.state.active_preset=preset; this._syncShared(); this.loadAll();
     }
-    vis(key) { return this.state.visibility[key] !== false; }
+    vis(key) {
+        if (this.state.visibility[key] === false) return false;
+        const hidden = this.state.userPrefs.hidden_sections || [];
+        return !hidden.includes(key);
+    }
+    get customizableSectionEntries() {
+        return this.getSectionLabelEntries().filter(([key]) => key !== 'settings');
+    }
+    get hasLoadError() { return (this.state.loadErrors || []).length > 0; }
+    get isAdminOrManager() { return this.state.role === 'admin' || this.state.role === 'manager'; }
+
 
     // ── Presets ───────────────────────────────────────────────────────────
     applyPreset(p) {
@@ -144,19 +194,43 @@ class Dashboard extends Component {
     onDateChange(){if(this.state.from_date&&this.state.to_date){this.state.active_preset='custom';this._syncShared();this.loadAll();}}
 
     // ── Data loading ──────────────────────────────────────────────────────
-    async loadAll() {
+    async _safeRpc(model, method, args, fallback, label) {
         try {
-            const [data, widgets, vis, trend, aging, ops, cust, fin, notes, company] = await Promise.all([
-                this.orm.call("dashboard.data","get_dashboard",[this.state.from_date||false,this.state.to_date||false]),
-                this.orm.call("dashboard.data","get_business_widgets",[]),
-                this.orm.call("dashboard.data","get_visibility",[]),
-                this.orm.call("dashboard.data","get_trend_data",[this.state.from_date||false,this.state.to_date||false,'sale']),
-                this.orm.call("dashboard.data","get_aging_report",[]),
-                this.orm.call("dashboard.data","get_operations_data",[]),
-                this.orm.call("dashboard.data","get_customer_intelligence",[this.state.from_date||false,this.state.to_date||false]),
-                this.orm.call("dashboard.data","get_financial_controls",[this.state.from_date||false,this.state.to_date||false]),
-                this.orm.call("dashboard.data","get_team_notes",[]),
-                this.orm.call("dashboard.data","get_company_info",[]),
+            return await this.orm.call(model, method, args);
+        } catch (e) {
+            this._loadErrors = this._loadErrors || [];
+            this._loadErrors.push(label || `${model}.${method}`);
+            console.error(`Dashboard ${label || method} load error:`, e);
+            return fallback;
+        }
+    }
+
+    async loadUserPreferences() {
+        try {
+            const prefs = await this.orm.call("dashboard.data", "get_user_preferences", []);
+            if (prefs) {
+                this.state.userPrefs = Object.assign({}, this.state.userPrefs, prefs);
+                this.state.refreshMins = Number(prefs.refresh_mins) || 5;
+                this.state.autoRefresh = !!prefs.auto_refresh;
+                this.state.themeColor = prefs.accent_color || this.state.themeColor;
+                this.state.darkMode = !!prefs.dark_mode;
+                try { localStorage.setItem('eagle_dark_mode', this.state.darkMode ? '1' : '0'); } catch(e) {}
+            }
+        } catch (e) {
+            // Preferences are optional; retain safe defaults.
+            console.error('Dashboard preferences load error:', e);
+        }
+    }
+
+    async loadAll() {
+        this.state.loading = true;
+        this._loadErrors = [];
+        try {
+            const [data, widgets, vis, company] = await Promise.all([
+                this._safeRpc("dashboard.data","get_dashboard",[this.state.from_date||false,this.state.to_date||false],{quotations:[],orders:[],purchases:[],rfq:[],transactions:[],total_counts:{}},'Core data'),
+                this._safeRpc("dashboard.data","get_business_widgets",[],{overdue_count:0,overdue_amount:0,due_soon_count:0,due_soon_amount:0,top_customers:[],month_sales:0,sales_target:0,low_stock:[]},'Business KPIs'),
+                this._safeRpc("dashboard.data","get_visibility",[],{role:this.state.role,visibility:{},section_labels:{},all_defaults:{}},'Visibility'),
+                this._safeRpc("dashboard.data","get_company_info",[],{name:'',id:0},'Company'),
             ]);
 
             this._orderLines={}; this._purchaseLines={};
@@ -172,10 +246,6 @@ class Dashboard extends Component {
                 due_soon_count:widgets.due_soon_count, due_soon_amount:widgets.due_soon_amount,
                 top_customers:widgets.top_customers, month_sales:widgets.month_sales,
                 sales_target:widgets.sales_target, low_stock:widgets.low_stock,
-                trend_data: trend||[], aging: aging||{ar:[],ap:[]},
-                operations: ops||{pending_deliveries:[],mismatch:[],stock_value:0},
-                customers:  cust||{new:0,returning:0,total:0,clv:[]},
-                financial:  fin||{},
                 role:       vis.role,
                 visibility: vis.visibility||{},
                 section_labels: vis.section_labels||{},
@@ -183,6 +253,8 @@ class Dashboard extends Component {
                 teamNotes:      notes||'',
                 companyName:    company ? company.name : '',
                 companyId:      company ? company.id : 0,
+                dataTotals: Object.assign({}, this.state.dataTotals, data.total_counts || {}),
+                dataPageLimits: Object.assign({}, this.state.dataPageLimits, data.page_limits || {}),
             });
 
             const pm={};
@@ -198,8 +270,47 @@ class Dashboard extends Component {
 
             // Push notification checks
             this._checkPushAlerts(widgets);
-        } catch(e) { console.error("Dashboard load error:",e); }
+        } catch(e) {
+            this._loadErrors = this._loadErrors || [];
+            this._loadErrors.push("Dashboard core");
+            console.error("Dashboard load error:",e);
+        } finally {
+            this.state.loadErrors = [...new Set(this._loadErrors || [])];
+            this.state.lastUpdated = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+            this.state.loading = false;
+        }
     }
+
+    async loadDeferredAnalytics() {
+        try {
+            const [trend, aging, ops, cust, fin, notes, stage23, control] = await Promise.all([
+                this._safeRpc("dashboard.data","get_trend_data",[this.state.from_date||false,this.state.to_date||false,'sale'],[],'Trend'),
+                this._safeRpc("dashboard.data","get_aging_report",[],{ar:[],ap:[]},'Aging'),
+                this._safeRpc("dashboard.data","get_operations_data",[],{pending_deliveries:[],mismatch:[],stock_value:0},'Operations'),
+                this._safeRpc("dashboard.data","get_customer_intelligence",[this.state.from_date||false,this.state.to_date||false],{new:0,returning:0,total:0,clv:[]},'Customers'),
+                this._safeRpc("dashboard.data","get_financial_controls",[this.state.from_date||false,this.state.to_date||false],{},'Financial controls'),
+                this._safeRpc("dashboard.data","get_team_notes",[],this.state.teamNotes||'','Team notes'),
+                this._safeRpc("dashboard.data","get_management_insights",[this.state.from_date||false,this.state.to_date||false,this.state.dailyClosingDate||false],{},'Management analytics'),
+                this._safeRpc("dashboard.data","get_control_center",[this.state.from_date||false,this.state.to_date||false],{},'Control center'),
+            ]);
+            Object.assign(this.state, {
+                trend_data: trend||[], aging: aging||{ar:[],ap:[]},
+                operations: ops||{pending_deliveries:[],mismatch:[],stock_value:0},
+                customers: cust||{new:0,returning:0,total:0,clv:[]},
+                financial: fin||{}, teamNotes: notes||this.state.teamNotes,
+                management: stage23 ? (stage23.sales_performance ? {sales_performance: stage23.sales_performance, product_profitability: stage23.product_profitability||[], inventory_risk: stage23.inventory_risk||[]} : this.state.management) : this.state.management,
+                warehouseComparison: stage23 ? (stage23.warehouse_comparison||[]) : this.state.warehouseComparison,
+                dailyClosing: stage23 ? (stage23.daily_closing||this.state.dailyClosing) : this.state.dailyClosing,
+                actionCenter: control && control.action_center ? control.action_center : this.state.actionCenter,
+                ultimate: control && control.ultimate ? control.ultimate : this.state.ultimate,
+                executive: control && control.executive ? control.executive : this.state.executive,
+            });
+        } catch (e) {
+            console.error('Deferred dashboard analytics error:', e);
+        }
+    }
+
+    async retryLoad() { await this.loadAll(); }
 
     // ── Load the lighter "attractive pack" widgets in parallel ─────────────
     async loadAttractivePack() {
@@ -217,7 +328,7 @@ class Dashboard extends Component {
             this.state.productBundles = bundles || [];
             this.state.streak = streak ? streak.streak : 0;
             this.state.dailyTarget = streak ? streak.daily_target : 0;
-            this.state.themeColor = theme || '#4f5bd5';
+            this.state.themeColor = this.state.userPrefs.accent_color || theme || '#4f5bd5';
             this.state.onlineUsers = online || [];
             if (this.targetPct >= 100 && !this._confettiShown) {
                 this._confettiShown = true;
@@ -246,6 +357,88 @@ class Dashboard extends Component {
     get filteredQuotations()   { return this.state.quotations.filter(r=>this._ok(r)); }
     get filteredRfq()          { return this.state.rfq.filter(r=>this._ok(r)); }
     get filteredTransactions() { return this.state.transactions.filter(r=>this._ok(r)); }
+    get ordersCount() { return this.state.dataTotals.orders || this.state.orders.length; }
+    get quotationsCount() { return this.state.dataTotals.quotations || this.state.quotations.length; }
+    get purchasesCount() { return this.state.dataTotals.purchases || this.state.purchases.length; }
+    get rfqCount() { return this.state.dataTotals.rfq || this.state.rfq.length; }
+    get transactionsCount() { return this.state.dataTotals.transactions || this.state.transactions.length; }
+
+    formatAmount(value) { const n=parseFloat(value); return Number.isFinite(n) ? n.toFixed(2) : '0.00'; }
+    getSectionLabelEntries() { return Object.entries(this.state.section_labels || {}); }
+    absAmount(value) { const n=parseFloat(value); return Number.isFinite(n) ? Math.abs(n) : 0; }
+    roundPercent(a,b) { const x=parseFloat(a)||0, y=parseFloat(b)||0; return y ? Math.round(x/y*100) : 0; }
+
+    // ── Stage 4 control center ───────────────────────────────────────────
+    toggleStage4(key) {
+        if (Object.prototype.hasOwnProperty.call(this.state.stage4Open, key)) {
+            this.state.stage4Open[key] = !this.state.stage4Open[key];
+        }
+    }
+    toggleExecutive() { this.state.executiveOpen = !this.state.executiveOpen; }
+    openExecutiveAnomalies() { this._newTab('sale.order',[['state','in',['sale','done']],['amount_total','>',0]],'Sales Anomalies Review'); }
+    openExecutiveAudit() { this._newTab('dashboard.audit.event',[['company_id','=',this.state.companyId]],'Dashboard Audit Trail'); }
+    openExecutiveReorder() { this._newTab('product.product',[['active','=',true],['type','in',['product','consu']]],'Inventory Reorder Review'); }
+    toggleUltimateTable(key) {
+        if (Object.prototype.hasOwnProperty.call(this.state.ultimateTablesOpen, key)) {
+            this.state.ultimateTablesOpen[key] = !this.state.ultimateTablesOpen[key];
+        }
+    }
+    toggleUltimate() { this.state.ultimateOpen = !this.state.ultimateOpen; }
+    openUltimateProduct(id) { if (id) this._openTab('product.product', id); }
+    openUltimatePartner(id) { if (id) this._openTab('res.partner', id); }
+    openUltimateOrder(id) { if (id) this._openTab('sale.order', id); }
+    openUltimateRefunds() { this._newTab('account.move',[['move_type','=','out_refund'],['state','=','posted']],'Customer Refunds'); }
+    openUltimateReconciliation() { this._newTab('account.bank.statement.line',[['is_reconciled','=',false],['journal_id.type','in',['bank','cash']]],'Unreconciled Bank/Cash Lines'); }
+    openUltimateApprovals() { this._newTab('sale.order',[['state','=','draft']],'Pending Sale Approvals'); }
+    printManagementPack() {
+        const u=this.state.ultimate||{};
+        const tc=u.today_change||{}; const dq=u.data_quality||{}; const rec=u.reconciliation||{}; const ret=u.returns||{};
+        const rows=(u.can_manage? (u.salespeople||[]).map(r=>`<tr><td>${this._esc(r.name)}</td><td style=\"text-align:right\">${r.orders}</td><td style=\"text-align:right\">BDT ${this.formatAmount(r.sales)}</td></tr>`).join('') : '<tr><td colspan=3>Restricted</td></tr>');
+        const style=Array.from(document.querySelectorAll('link[rel=\"stylesheet\"]')).map(l=>`<link rel=\"stylesheet\" href=\"${l.href}\">`).join('');
+        const pw=window.open('','_blank','width=1100,height=800'); if(!pw)return;
+        pw.document.write(`<!doctype html><html><head><meta charset=\"utf-8\"><title>Management Pack</title>${style}<style>body{font-family:sans-serif;padding:24px;color:#111827}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin-top:22px;border-bottom:2px solid #1a1f36;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.k{border:1px solid #e5e7eb;padding:10px;border-radius:6px}.k b{display:block;font-size:18px;margin-top:4px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left}@media print{@page{size:A4;margin:10mm}}</style></head><body><h1>Management Control Pack</h1><div>Period: ${this._esc(u.period?.from_date||'')} — ${this._esc(u.period?.to_date||'')}</div><h2>Today vs Yesterday</h2><div class=\"grid\"><div class=\"k\">Sales Today<b>BDT ${this.formatAmount(tc.sales_today)}</b></div><div class=\"k\">Sales Change<b>${tc.sales_change_pct===null?'—':tc.sales_change_pct+'%'}</b></div><div class=\"k\">Customer Received<b>BDT ${this.formatAmount(tc.received_today)}</b></div><div class=\"k\">Vendor Paid<b>BDT ${this.formatAmount(tc.paid_today)}</b></div></div><h2>Returns</h2><div>Refunds: ${ret.count||0} · BDT ${this.formatAmount(ret.amount)}</div><h2>Reconciliation</h2><div>Unreconciled lines: ${rec.unreconciled_count||0} · In-process payments: ${rec.in_process_count||0}</div><h2>Data Quality</h2><div>Barcode: ${dq.missing_product_barcode||0} · Category: ${dq.missing_product_category||0} · Sale Price: ${dq.non_positive_sale_price||0} · Negative Stock: ${dq.negative_stock_quants||0} · Customer Email: ${dq.customer_missing_email||0}</div><h2>Salesperson Performance</h2><table><thead><tr><th>Salesperson</th><th>Orders</th><th>Sales</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+        pw.document.close(); pw.onload=()=>{try{pw.focus();pw.print();pw.close();}catch(e){}}; setTimeout(()=>{try{pw.focus();pw.print();pw.close();}catch(e){}},1200);
+    }
+    _esc(value) { return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch])); }
+    openActionCenterCard(card) {
+        if (!card || !card.model) return;
+        this._newTab(card.model, card.domain || [], card.label || 'Action Center');
+    }
+    get actionCenterCards() { return this.state.actionCenter.cards || []; }
+
+    // ── Stage 2 + 3 management analytics ────────────────────────────────
+    toggleStageTable(key) {
+        if (Object.prototype.hasOwnProperty.call(this.state.stageTablesOpen, key)) {
+            this.state.stageTablesOpen[key] = !this.state.stageTablesOpen[key];
+        }
+    }
+    async onDailyClosingDateChange(ev) {
+        this.state.dailyClosingDate = ev.target.value || new Date().toISOString().split('T')[0];
+        try {
+            const data = await this.orm.call("dashboard.data","get_management_insights",[
+                this.state.from_date||false,this.state.to_date||false,this.state.dailyClosingDate
+            ]);
+            this.state.dailyClosing = data ? (data.daily_closing||this.state.dailyClosing) : this.state.dailyClosing;
+        } catch (e) {
+            console.error("Daily closing load error:", e);
+        }
+    }
+    openManagementProduct(id) { this._openTab('product.product', id); }
+
+    printDailyClosing() {
+        const d = this.state.dailyClosing || {};
+        const pw = window.open('', '_blank', 'width=1100,height=800');
+        if (!pw) return;
+        const money = v => {
+            const n = parseFloat(v);
+            return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+        };
+        const moves = d.journal_moves || [];
+        const rows = moves.map(r => `<tr><td>${String(r.journal_name||'')}</td><td class="num">${r.balance_masked?'••••••':money(r.opening)}</td><td class="num in">${money(r.deposit)}</td><td class="num out">${money(r.withdraw)}</td><td class="num">${r.change>=0?'+':''}${money(r.change)}</td><td class="num">${r.balance_masked?'••••••':money(r.closing)}</td></tr>`).join('');
+        pw.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Daily Closing ${d.date||''}</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111827}h1{margin:0 0 4px}h2{margin:24px 0 8px;font-size:16px;border-bottom:2px solid #111827;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.box{border:1px solid #d1d5db;padding:10px;border-radius:8px}.lbl{font-size:11px;color:#6b7280}.val{font-size:18px;font-weight:700;margin-top:4px}.num{text-align:right;font-variant-numeric:tabular-nums}.in{color:#059669}.out{color:#dc2626}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:8px;border-bottom:1px solid #e5e7eb}th{background:#1a1f36;color:#fff;text-align:left}@media print{@page{size:A4 landscape;margin:12mm}body{padding:0}}</style></head><body><h1>Daily Closing</h1><div>Business Dashboard · ${d.date||''}</div><div class="grid" style="margin-top:16px"><div class="box"><div class="lbl">Sales</div><div class="val">BDT ${money(d.sales_amount)}</div><div class="lbl">${d.sales_orders||0} order(s)</div></div><div class="box"><div class="lbl">Customer Received</div><div class="val">BDT ${money(d.customer_received)}</div><div class="lbl">${d.customer_payments||0} payment(s)</div></div><div class="box"><div class="lbl">Vendor Paid</div><div class="val">BDT ${money(d.vendor_paid)}</div><div class="lbl">${d.vendor_payments||0} payment(s)</div></div><div class="box"><div class="lbl">Net Cash Movement</div><div class="val">BDT ${money(d.net_cash_movement)}</div></div></div><h2>Documents & Operations</h2><div class="grid"><div class="box"><div class="lbl">Customer Invoices</div><div class="val">${d.customer_invoices||0} · BDT ${money(d.customer_invoice_amount)}</div></div><div class="box"><div class="lbl">Vendor Bills</div><div class="val">${d.vendor_bills||0} · BDT ${money(d.vendor_bill_amount)}</div></div><div class="box"><div class="lbl">Deliveries Done</div><div class="val">${d.deliveries_done||0}</div></div><div class="box"><div class="lbl">Receipts Done</div><div class="val">${d.receipts_done||0}</div></div></div><p style="margin-top:10px">Internal Transfers Done: <b>${d.internal_transfers_done||0}</b> · Draft Payments: <b>${d.draft_payments||0}</b> · Pending Deliveries: <b>${d.pending_deliveries||0}</b> · Pending Receipts: <b>${d.pending_receipts||0}</b></p><h2>Journal Movement</h2><table><thead><tr><th>Journal</th><th>Previous</th><th>Deposit</th><th>Withdraw</th><th>Change</th><th>New Balance</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+        pw.document.close();
+        setTimeout(()=>{ try { pw.focus(); pw.print(); pw.close(); } catch(e) {} }, 500);
+    }
 
     // ── Quick search ──────────────────────────────────────────────────────
     onQuickSearch(ev) {
@@ -317,6 +510,72 @@ class Dashboard extends Component {
         }
         setTimeout(()=>{this.state.notesSaved=false; this.state.notesMentioned=null;},3000);
     }
+
+    // ── Personal customization ───────────────────────────────────────────
+    openCustomize() {
+        this.state.customizeDraft = JSON.parse(JSON.stringify(this.state.userPrefs || {}));
+        this.state.customizeSaved = false;
+        this.state.showCustomize = true;
+    }
+    closeCustomize() { this.state.showCustomize = false; }
+    applyWorkspacePreset(name) {
+        const presets = {
+            executive: ['notes','clv','orders','purchases','quotations','rfq','transactions','analytics','customers'],
+            finance: ['operations','customers','clv','product_profitability','inventory_risk','warehouse_comparison','sales_performance'],
+            sales: ['financial','aging','journal','journal_summary','transactions','warehouse_comparison','daily_closing','reconciliation'],
+            operations: ['financial','aging','journal','journal_summary','transactions','product_profitability','clv','customers'],
+            minimal: ['analytics','chart','operations','customers','aging','financial','notes','journal','journal_summary','transactions','clv','sales_performance','product_profitability','inventory_risk','warehouse_comparison','daily_closing'],
+            all: [],
+        };
+        if (!Object.prototype.hasOwnProperty.call(presets, name)) return;
+        this.state.customizeDraft.hidden_sections = [...presets[name]];
+        this.state.customizeDraft.workspace = name;
+    }
+
+    toggleCustomSection(key) {
+        const list = this.state.customizeDraft.hidden_sections || [];
+        const idx = list.indexOf(key);
+        if (idx >= 0) list.splice(idx, 1); else list.push(key);
+        this.state.customizeDraft.hidden_sections = list;
+    }
+    isCustomSectionVisible(key) { return !(this.state.customizeDraft.hidden_sections || []).includes(key); }
+    async saveCustomize() {
+        this.state.customizeBusy = true;
+        try {
+            const saved = await this.orm.call("dashboard.data", "save_user_preferences", [this.state.customizeDraft]);
+            this.state.userPrefs = Object.assign({}, this.state.userPrefs, saved || this.state.customizeDraft);
+            this.state.themeColor = this.state.userPrefs.accent_color || this.state.themeColor;
+            this.state.darkMode = !!this.state.userPrefs.dark_mode;
+            this.state.refreshMins = Number(this.state.userPrefs.refresh_mins) || 5;
+            this.state.autoRefresh = !!this.state.userPrefs.auto_refresh;
+            try { localStorage.setItem('eagle_dark_mode', this.state.darkMode ? '1' : '0'); } catch(e) {}
+            if (this.state.autoRefresh) this._startRefresh(); else this._stopRefresh();
+            this.state.customizeSaved = true;
+            setTimeout(() => { this.state.customizeSaved = false; this.state.showCustomize = false; }, 600);
+        } catch (e) { console.error('Save dashboard customization error:', e); }
+        finally { this.state.customizeBusy = false; }
+    }
+    async resetCustomize() {
+        const prefs = await this.orm.call("dashboard.data", "reset_user_preferences", []);
+        this.state.userPrefs = Object.assign({}, this.state.userPrefs, prefs || {});
+        this.state.customizeDraft = JSON.parse(JSON.stringify(this.state.userPrefs));
+        this.state.themeColor = this.state.userPrefs.accent_color || '#4f5bd5';
+        this.state.darkMode = !!this.state.userPrefs.dark_mode;
+        this.state.refreshMins = Number(this.state.userPrefs.refresh_mins) || 5;
+        this.state.autoRefresh = !!this.state.userPrefs.auto_refresh;
+        if (this.state.autoRefresh) this._startRefresh(); else this._stopRefresh();
+    }
+
+    // ── Dashboard health / self diagnostics ────────────────────────────────
+    async openHealth() {
+        if (!this.isAdminOrManager) return;
+        this.state.showHealth = true;
+        this.state.healthLoading = true;
+        try { this.state.health = await this.orm.call("dashboard.data", "get_dashboard_health", []); }
+        catch (e) { this.state.health = {allowed:false,checks:[],generated_at:''}; console.error('Health check error:', e); }
+        finally { this.state.healthLoading = false; }
+    }
+    closeHealth() { this.state.showHealth = false; }
 
     // ── Settings ─────────────────────────────────────────────────────────
     openSettings() {
@@ -431,6 +690,23 @@ class Dashboard extends Component {
     openMonthSales(){this._newTab('sale.order',[["state","=","sale"],["date_order",">=",this._firstOfMonth()],["date_order","<=",this._today()]],"This Month's Orders");}
     openLowStockList(){this._newTab('product.product',[["type","=","consu"],["qty_available","<=",5],["active","=",true]],'Low Stock Products');}
     openProduct(id){this._openTab('product.product',id);}
+
+    async validatePayment(id) {
+        if (this.state.validatingPaymentId) return;
+        this.state.validatingPaymentId = id;
+        try {
+            const result = await this.orm.call('dashboard.data', 'validate_payment', [id]);
+            if (result && result.already_posted && result.message) {
+                window.alert(result.message);
+            }
+            await this.loadAll();
+        } catch (e) {
+            console.error('Payment validation failed:', e);
+            window.alert(e?.data?.message || e?.message || 'Unable to validate this payment.');
+        } finally {
+            this.state.validatingPaymentId = 0;
+        }
+    }
 
     // ── Low stock fold + snooze ──────────────────────────────────────────
     toggleLowStock() { this.state.lowStockExpanded = !this.state.lowStockExpanded; }
@@ -572,6 +848,7 @@ class Dashboard extends Component {
 
     // ── Command palette (Ctrl+K) ─────────────────────────────────────────
     _onKeyDown(ev) {
+        if (this.state.userPrefs.keyboard_shortcuts === false) return;
         const tag = (ev.target.tagName || '').toLowerCase();
         const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || ev.target.isContentEditable;
 
@@ -632,6 +909,8 @@ class Dashboard extends Component {
     _openTab(model,id){const t=window.open(`/web#model=${model}&id=${id}&view_type=form`,'_blank');if(t)t.focus();}
     openOrder(id)      {this._openTab('sale.order',id); const r=this.state.orders.find(o=>o.id===id)||this.state.quotations.find(o=>o.id===id); this._pushRecentlyViewed('order',id,r?r.name:`Order #${id}`);}
     openPurchase(id)   {this._openTab('purchase.order',id); const r=this.state.purchases.find(o=>o.id===id)||this.state.rfq.find(o=>o.id===id); this._pushRecentlyViewed('purchase',id,r?r.name:`Purchase #${id}`);}
+    openPartner(id)    {this._openTab('res.partner',id); this._pushRecentlyViewed('partner',id,'Partner');}
+    openTransaction(id){this._openTab('account.payment',id); this._pushRecentlyViewed('transaction',id,'Transaction');}
     goToFinanceDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.finance_dashboard_action");}
     goToOperationsDashboard(){this._syncShared();this.action.doAction("eagle_business_dashboard.operations_dashboard_action");}
 
@@ -662,75 +941,27 @@ class Dashboard extends Component {
     }
 
     // ── Quick Sale ────────────────────────────────────────────────────────
-    async openQuickSale() {
-        this.state.quickSalePartner=''; this.state.quickSaleProduct='';
-        this.state.quickSalePartnerSearch=''; this.state.quickSaleProductSearch='';
-        this.state.quickSaleQty=1;
-        this.state.quickSaleError=''; this.state.quickSaleSubmitting=false;
-        this.state.showQuickSale=true;
-        try {
-            this.state.productOptions = await this.orm.call("dashboard.data","get_product_options",[]);
-        } catch(e) {
-            console.error("Failed to load products:", e);
-            this.state.productOptions = [];
-            this.state.quickSaleError = 'Could not load products. Please try again.';
+    openQuickSale() {
+        if (!this._quickSaleDialog) {
+            this._quickSaleDialog = new EagleQuickSaleDialog({
+                orm: this.orm,
+                formatAmount: (value) => this.formatAmount(value),
+                partnerOptions: () => this.state.partnerOptions || [],
+                onCreated: async (res) => {
+                    this.state.quickSaleLastResult = res.merged
+                        ? `Added to existing draft order ${res.name}.`
+                        : `Created new order ${res.name}.`;
+                    this._openTab('sale.order', res.id);
+                    await this.loadAll();
+                    setTimeout(() => { this.state.quickSaleLastResult = ''; }, 5000);
+                },
+            });
         }
-    }
-    closeQuickSale() { this.state.showQuickSale=false; }
-
-    onQuickSalePartnerInput(ev) {
-        const value = (ev.target.value || '').trim();
-        this.state.quickSalePartnerSearch = value;
-        const match = value.match(/\[#(\d+)\]\s*$/);
-        this.state.quickSalePartner = match ? match[1] : '';
-        if (value === '— Walk-in customer —') this.state.quickSalePartner = '';
+        this._quickSaleDialog.open();
     }
 
-    onQuickSaleProductInput(ev) {
-        const value = (ev.target.value || '').trim();
-        this.state.quickSaleProductSearch = value;
-        const match = value.match(/\[#(\d+)\]\s*$/);
-        this.state.quickSaleProduct = match ? match[1] : '';
-    }
-
-    async submitQuickSale() {
-        this.state.quickSaleError = '';
-        if (!this.state.quickSaleProduct) {
-            this.state.quickSaleError = 'Please select a product.';
-            return;
-        }
-        const qty = parseFloat(this.state.quickSaleQty);
-        if (!qty || qty <= 0) {
-            this.state.quickSaleError = 'Quantity must be greater than 0.';
-            return;
-        }
-        this.state.quickSaleSubmitting = true;
-        try {
-            const partnerId = this.state.quickSalePartner ? parseInt(this.state.quickSalePartner) : false;
-            const productId = parseInt(this.state.quickSaleProduct);
-            const res = await this.orm.call("dashboard.data","create_quick_sale",
-                [partnerId, productId, qty, false]);
-            if (res && res.error) {
-                this.state.quickSaleError = res.error;
-                return;
-            }
-            if (res && res.id) {
-                this.state.showQuickSale = false;
-                this.state.quickSaleLastResult = res.merged
-                    ? `Added to existing draft order ${res.name}.`
-                    : `Created new order ${res.name}.`;
-                this._openTab('sale.order', res.id);
-                await this.loadAll();
-                setTimeout(()=>{ this.state.quickSaleLastResult = ''; }, 5000);
-            } else {
-                this.state.quickSaleError = 'Something went wrong creating the order. Please try again.';
-            }
-        } catch(e) {
-            console.error("Quick sale failed:", e);
-            this.state.quickSaleError = 'Server error while creating the order.';
-        } finally {
-            this.state.quickSaleSubmitting = false;
-        }
+    closeQuickSale() {
+        if (this._quickSaleDialog) this._quickSaleDialog.close();
     }
 
     // ── Dark mode ─────────────────────────────────────────────────────────

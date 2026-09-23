@@ -9,20 +9,26 @@ _DEFAULT_VISIBILITY = {
     "admin": {
         "kpi": True, "analytics": True, "chart": True, "operations": True,
         "customers": True, "aging": True, "financial": True, "notes": True,
-        "journal": True, "transactions": True, "clv": True, "quick_search": True,
+        "journal": True, "journal_summary": True, "transactions": True, "clv": True, "quick_search": True,
         "multi_period": True, "settings": True,
+        "action_center": True, "transfer_monitor": True, "cash_flow_forecast": True, "ultimate_control": True,
+        "sales_performance": True, "product_profitability": True, "inventory_risk": True, "warehouse_comparison": True, "daily_closing": True,
     },
     "manager": {
         "kpi": True, "analytics": True, "chart": True, "operations": True,
         "customers": True, "aging": True, "financial": False, "notes": True,
-        "journal": True, "transactions": True, "clv": True, "quick_search": True,
+        "journal": True, "journal_summary": True, "transactions": True, "clv": True, "quick_search": True,
         "multi_period": True, "settings": False,
+        "action_center": True, "transfer_monitor": True, "cash_flow_forecast": True, "ultimate_control": True,
+        "sales_performance": True, "product_profitability": True, "inventory_risk": True, "warehouse_comparison": True, "daily_closing": True,
     },
     "user": {
         "kpi": True, "analytics": False, "chart": False, "operations": False,
         "customers": False, "aging": False, "financial": False, "notes": True,
-        "journal": False, "transactions": True, "clv": False, "quick_search": True,
+        "journal": False, "journal_summary": True, "transactions": True, "clv": False, "quick_search": True,
         "multi_period": False, "settings": False,
+        "action_center": True, "transfer_monitor": True, "cash_flow_forecast": False, "ultimate_control": True,
+        "sales_performance": True, "product_profitability": False, "inventory_risk": True, "warehouse_comparison": False, "daily_closing": False,
     },
 }
 
@@ -36,11 +42,21 @@ SECTION_LABELS = {
     "financial": "Financial controls (tax, unreconciled)",
     "notes": "Team notes panel",
     "journal": "Journal Balance table",
+    "journal_summary": "Journal Balance Summary (Previous / Current / Change)",
     "transactions": "Transaction table",
     "clv": "Customer Lifetime Value table",
     "quick_search": "Quick search bar",
     "multi_period": "Multi-period comparison toggle",
     "settings": "Settings panel (admin only)",
+    "action_center": "Stage 4 — Action Center",
+    "transfer_monitor": "Stage 4 — Transfer Monitor",
+    "cash_flow_forecast": "Stage 4 — 30-Day Cash Flow Forecast",
+    "ultimate_control": "Stage 5 — Control & Intelligence Center",
+    "sales_performance": "Stage 2 — Sales Performance",
+    "product_profitability": "Stage 2 — Product Profitability",
+    "inventory_risk": "Stage 2 — Inventory Risk",
+    "warehouse_comparison": "Stage 3 — Store / Warehouse Comparison",
+    "daily_closing": "Stage 3 — Daily Closing",
 }
 
 
@@ -59,11 +75,18 @@ class DashboardData(models.AbstractModel):
 
     def _get_user_role(self):
         user = self.env.user
-        if user.has_group('eagle_business_dashboard.group_dashboard_admin'):
+        if user.has_group('eagle_business_dashboard.group_dashboard_admin') or user.has_group('base.group_system'):
             return 'admin'
         if user.has_group('eagle_business_dashboard.group_dashboard_manager'):
             return 'manager'
         return 'user'
+
+    def _audit(self, action, model_name=False, record_id=False, reference=False, details=False):
+        try:
+            self.env['dashboard.audit.event'].log_event(action, model_name, record_id, reference, details)
+        except Exception:
+            # Auditing must never break the business operation being audited.
+            pass
 
     # ─── Access / Visibility ─────────────────────────────────────────────────
     @api.model
@@ -79,6 +102,7 @@ class DashboardData(models.AbstractModel):
         default.update(cfg.get(role, {}))
         return {
             'role': role,
+            'can_manage_ledger_security': bool(self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin') or self.env.user.has_group('base.group_system')),
             'visibility': default,
             'section_labels': SECTION_LABELS,
             'all_defaults': _DEFAULT_VISIBILITY,
@@ -86,7 +110,7 @@ class DashboardData(models.AbstractModel):
 
     @api.model
     def save_visibility(self, config):
-        if not self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin'):
+        if not (self.env.user.has_group('eagle_business_dashboard.group_dashboard_admin') or self.env.user.has_group('base.group_system')):
             return False
         self.env['ir.config_parameter'].sudo().set_param(
             'eagle_dashboard.visibility', json.dumps(config))
@@ -142,6 +166,19 @@ class DashboardData(models.AbstractModel):
     # ─── Business Dashboard – main data ──────────────────────────────────────
     @api.model
     def get_dashboard(self, from_date=False, to_date=False):
+        """Return a bounded dashboard page rather than the entire database.
+
+        The dashboard is a presentation layer. Sending every order, purchase,
+        quotation, RFQ, payment and every line to the browser can make the
+        browser unresponsive on large databases. This endpoint therefore sends
+        only the most recent bounded page. Exact totals are returned separately
+        so the UI can distinguish loaded rows from database totals.
+        """
+        PAGE_ORDERS = 100
+        PAGE_PURCHASES = 100
+        PAGE_PAYMENTS = 200
+        LINE_LIMIT = 30
+
         order_domain = [('state', '=', 'sale')]
         rfq_domain = [('state', 'not in', ['purchase', 'done'])]
         purchase_domain = [('state', 'in', ['purchase', 'done'])]
@@ -149,6 +186,8 @@ class DashboardData(models.AbstractModel):
         payment_domain = []
 
         if from_date and to_date:
+            # Use half-open bounds for datetime fields so an entire end date is
+            # included regardless of the user's timezone/record precision.
             df = [('create_date', '>=', from_date), ('create_date', '<=', to_date)]
             quotation_domain += df
             rfq_domain += df
@@ -156,11 +195,25 @@ class DashboardData(models.AbstractModel):
             order_domain = [('date_order', '>=', from_date), ('date_order', '<=', to_date), ('state', '=', 'sale')]
             payment_domain = [('date', '>=', from_date), ('date', '<=', to_date)]
 
-        quotations = self.env['sale.order'].search(quotation_domain)
-        orders = self.env['sale.order'].search(order_domain)
-        purchases = self.env['purchase.order'].search(purchase_domain)
-        payments = self.env['account.payment'].search(payment_domain)
-        rfq = self.env['purchase.order'].search(rfq_domain)
+        Sale = self.env['sale.order']
+        Purchase = self.env['purchase.order']
+        Payment = self.env['account.payment']
+
+        # Counts are cheap compared with serialising thousands of records and
+        # let the client display an honest "showing X of Y" context.
+        totals = {
+            'quotations': Sale.search_count(quotation_domain),
+            'orders': Sale.search_count(order_domain),
+            'purchases': Purchase.search_count(purchase_domain),
+            'rfq': Purchase.search_count(rfq_domain),
+            'transactions': Payment.search_count(payment_domain),
+        }
+
+        quotations = Sale.search(quotation_domain, order='date_order desc, id desc', limit=PAGE_ORDERS)
+        orders = Sale.search(order_domain, order='date_order desc, id desc', limit=PAGE_ORDERS)
+        purchases = Purchase.search(purchase_domain, order='date_order desc, id desc', limit=PAGE_PURCHASES)
+        rfq = Purchase.search(rfq_domain, order='date_order desc, id desc', limit=PAGE_PURCHASES)
+        payments = Payment.search(payment_domain, order='date desc, id desc', limit=PAGE_PAYMENTS)
 
         def sale_lines(o):
             return [{'product': l.product_id.name or l.name or '', 'qty': l.product_uom_qty,
@@ -168,7 +221,7 @@ class DashboardData(models.AbstractModel):
                      'discount': getattr(l, 'discount', 0.0) or 0.0,
                      'tax': ', '.join(l.tax_id.mapped('name')) if hasattr(l, 'tax_id') else '',
                      'subtotal': l.price_subtotal}
-                    for l in o.order_line.filtered(lambda x: not x.display_type)]
+                    for l in o.order_line.filtered(lambda x: not x.display_type)[:LINE_LIMIT]]
 
         def pur_lines(o):
             return [{'product': l.product_id.name or l.name or '', 'qty': l.product_qty,
@@ -176,7 +229,7 @@ class DashboardData(models.AbstractModel):
                      'discount': getattr(l, 'discount', 0.0) or 0.0,
                      'tax': ', '.join(l.taxes_id.mapped('name')) if hasattr(l, 'taxes_id') else '',
                      'subtotal': l.price_subtotal}
-                    for l in o.order_line.filtered(lambda x: not x.display_type)]
+                    for l in o.order_line.filtered(lambda x: not x.display_type)[:LINE_LIMIT]]
 
         f = self._fmt
 
@@ -186,24 +239,25 @@ class DashboardData(models.AbstractModel):
 
         return {
             'quotations': [{'id': q.id, 'name': q.name, 'partner': q.partner_id.name or '', 'partner_id': q.partner_id.id,
-                            'partner_parent': parent_name(q.partner_id),
-                            'status': q.state, 'date': f(q.date_order), 'amount': q.amount_total, 'lines': sale_lines(q)} for q in quotations],
+                            'partner_parent': parent_name(q.partner_id), 'status': q.state,
+                            'date': f(q.date_order), 'amount': q.amount_total, 'lines': sale_lines(q)} for q in quotations],
             'orders': [{'id': o.id, 'name': o.name, 'partner': o.partner_id.name or '', 'partner_id': o.partner_id.id,
-                        'partner_parent': parent_name(o.partner_id),
-                        'status': o.state, 'date': f(o.date_order), 'invoice_status': o.invoice_status,
+                        'partner_parent': parent_name(o.partner_id), 'status': o.state,
+                        'date': f(o.date_order), 'invoice_status': o.invoice_status,
                         'amount': o.amount_total, 'lines': sale_lines(o)} for o in orders],
             'purchases': [{'id': p.id, 'name': p.name, 'partner': p.partner_id.name or '', 'partner_id': p.partner_id.id,
-                           'partner_parent': parent_name(p.partner_id),
-                           'status': p.state, 'date': f(p.date_order), 'billing_status': p.invoice_status,
+                           'partner_parent': parent_name(p.partner_id), 'status': p.state,
+                           'date': f(p.date_order), 'billing_status': p.invoice_status,
                            'amount': p.amount_total, 'lines': pur_lines(p)} for p in purchases],
             'rfq': [{'id': r.id, 'name': r.name, 'partner': r.partner_id.name or '', 'partner_id': r.partner_id.id,
-                     'partner_parent': parent_name(r.partner_id),
-                     'status': r.state, 'date': f(r.date_order), 'amount': r.amount_total, 'lines': pur_lines(r)} for r in rfq],
+                     'partner_parent': parent_name(r.partner_id), 'status': r.state,
+                     'date': f(r.date_order), 'amount': r.amount_total, 'lines': pur_lines(r)} for r in rfq],
             'transactions': [{'id': t.id, 'name': t.name or 'Draft', 'partner': t.partner_id.name or '', 'partner_id': t.partner_id.id,
-                              'partner_parent': parent_name(t.partner_id),
-                              'ledger': t.journal_id.name, 'date': f(t.date),
-                              'received': t.amount if t.payment_type == 'inbound' else 0,
+                              'partner_parent': parent_name(t.partner_id), 'ledger': t.journal_id.name, 'journal_id': t.journal_id.id,
+                              'date': f(t.date), 'received': t.amount if t.payment_type == 'inbound' else 0,
                               'paid': t.amount if t.payment_type == 'outbound' else 0, 'state': t.state} for t in payments],
+            'total_counts': totals,
+            'page_limits': {'orders': PAGE_ORDERS, 'purchases': PAGE_PURCHASES, 'transactions': PAGE_PAYMENTS, 'lines': LINE_LIMIT},
         }
 
     # ─── Business Widgets (KPI) ───────────────────────────────────────────────
@@ -250,6 +304,592 @@ class DashboardData(models.AbstractModel):
             'sales_target': sales_target, 'low_stock': low_stock,
         }
 
+
+    # ─── Stage 4 control center helpers ─────────────────────────────────────
+    @api.model
+    def get_action_center(self, from_date=False, to_date=False):
+        """Return bounded, actionable exception counts for the current user.
+
+        These are live open-work queues, not historical KPI calculations. The
+        returned domains can be passed back to Odoo's normal list views.
+        """
+        today = fields.Date.context_today(self)
+        def card(key, label, icon, count, amount=None, severity='info', model=None, domain=None, help_text=''):
+            return {
+                'key': key, 'label': label, 'icon': icon, 'count': int(count or 0),
+                'amount': round(float(amount or 0.0), 2) if amount is not None else None,
+                'severity': severity, 'model': model, 'domain': domain or [],
+                'help': help_text,
+            }
+
+        cards = []
+        try:
+            dom = [('move_type', '=', 'out_invoice'), ('state', '=', 'posted'),
+                   ('payment_state', 'not in', ['paid', 'in_payment']),
+                   ('invoice_date_due', '<', str(today))]
+            recs = self.env['account.move'].search(dom, limit=100)
+            cards.append(card('overdue_invoices', 'Overdue Customer Invoices', 'fa-exclamation-circle',
+                              self.env['account.move'].search_count(dom), sum(recs.mapped('amount_residual')),
+                              'danger', 'account.move', dom, 'Posted customer invoices past due date.'))
+        except Exception:
+            cards.append(card('overdue_invoices', 'Overdue Customer Invoices', 'fa-exclamation-circle', 0, 0, 'danger'))
+
+        try:
+            dom = [('move_type', '=', 'in_invoice'), ('state', '=', 'posted'),
+                   ('payment_state', 'not in', ['paid', 'in_payment']),
+                   ('invoice_date_due', '<', str(today))]
+            recs = self.env['account.move'].search(dom, limit=100)
+            cards.append(card('overdue_bills', 'Overdue Vendor Bills', 'fa-warning',
+                              self.env['account.move'].search_count(dom), sum(recs.mapped('amount_residual')),
+                              'danger', 'account.move', dom, 'Posted vendor bills past due date.'))
+        except Exception:
+            cards.append(card('overdue_bills', 'Overdue Vendor Bills', 'fa-warning', 0, 0, 'danger'))
+
+        try:
+            dom = [('picking_type_id.code', '=', 'outgoing'), ('state', 'not in', ['done', 'cancel']),
+                   ('scheduled_date', '<', str(today))]
+            cards.append(card('late_deliveries', 'Late Deliveries', 'fa-truck',
+                              self.env['stock.picking'].search_count(dom), severity='danger',
+                              model='stock.picking', domain=dom, help_text='Outgoing transfers scheduled before today and not completed.'))
+        except Exception:
+            cards.append(card('late_deliveries', 'Late Deliveries', 'fa-truck', 0, severity='danger'))
+
+        try:
+            dom = [('picking_type_id.code', '=', 'incoming'), ('state', 'not in', ['done', 'cancel']),
+                   ('scheduled_date', '<', str(today))]
+            cards.append(card('late_receipts', 'Late Receipts', 'fa-download',
+                              self.env['stock.picking'].search_count(dom), severity='warning',
+                              model='stock.picking', domain=dom, help_text='Incoming transfers scheduled before today and not completed.'))
+        except Exception:
+            cards.append(card('late_receipts', 'Late Receipts', 'fa-download', 0, severity='warning'))
+
+        try:
+            dom = [('state', '=', 'draft')]
+            cards.append(card('draft_payments', 'Draft Payments', 'fa-pencil-square-o',
+                              self.env['account.payment'].search_count(dom), severity='warning',
+                              model='account.payment', domain=dom, help_text='Payments not yet posted.'))
+        except Exception:
+            cards.append(card('draft_payments', 'Draft Payments', 'fa-pencil-square-o', 0, severity='warning'))
+
+        try:
+            dom = [('state', '=', 'in_process')]
+            cards.append(card('in_process_payments', 'In-Process Payments', 'fa-hourglass-half',
+                              self.env['account.payment'].search_count(dom), severity='warning',
+                              model='account.payment', domain=dom, help_text='Posted payments awaiting bank matching/reconciliation.'))
+        except Exception:
+            cards.append(card('in_process_payments', 'In-Process Payments', 'fa-hourglass-half', 0, severity='warning'))
+
+        try:
+            dom = [('is_reconciled', '=', False), ('journal_id.type', 'in', ['bank', 'cash'])]
+            count = self.env['account.bank.statement.line'].search_count(dom)
+            cards.append(card('unreconciled_bank', 'Unreconciled Bank Lines', 'fa-university', count, severity='warning',
+                              model='account.bank.statement.line', domain=dom, help_text='Bank/cash statement lines not yet reconciled.'))
+        except Exception:
+            # Some configurations may not expose statement lines; preserve the card.
+            cards.append(card('unreconciled_bank', 'Unreconciled Bank Lines', 'fa-university', 0, severity='warning'))
+
+        try:
+            dom = [('state', '=', 'draft')]
+            cards.append(card('quotations', 'Open Quotations', 'fa-file-text-o',
+                              self.env['sale.order'].search_count(dom), severity='info',
+                              model='sale.order', domain=dom, help_text='Sales quotations not yet confirmed.'))
+        except Exception:
+            cards.append(card('quotations', 'Open Quotations', 'fa-file-text-o', 0, severity='info'))
+
+        try:
+            dom = [('state', '=', 'draft')]
+            cards.append(card('rfq', 'Open RFQs', 'fa-shopping-cart',
+                              self.env['purchase.order'].search_count(dom), severity='info',
+                              model='purchase.order', domain=dom, help_text='Requests for quotation not yet confirmed.'))
+        except Exception:
+            cards.append(card('rfq', 'Open RFQs', 'fa-shopping-cart', 0, severity='info'))
+
+        try:
+            dom = [('active', '=', True), ('type', 'in', ['product', 'consu']), ('qty_available', '<=', 5)]
+            cards.append(card('low_stock', 'Low / Out-of-Stock Products', 'fa-cubes',
+                              self.env['product.product'].search_count(dom), severity='warning',
+                              model='product.product', domain=dom, help_text='Active storable/consumable products at or below the low-stock threshold of 5 units.'))
+        except Exception:
+            cards.append(card('low_stock', 'Low / Out-of-Stock Products', 'fa-cubes', 0, severity='warning'))
+
+        total_open = sum(c['count'] for c in cards)
+        critical = sum(c['count'] for c in cards if c['severity'] == 'danger')
+        return {'cards': cards, 'total_open': total_open, 'critical': critical, 'as_of': str(today)}
+
+    @api.model
+    def get_transfer_monitor(self, from_date=False, to_date=False):
+        """Show internal-transfer payment pairs as one source→destination row.
+
+        Odoo 18 records an internal transfer across the corresponding bank/cash
+        journals. The dashboard consolidates the payment pair so managers can
+        verify the same movement without double-counting it.
+        """
+        result = {'available': True, 'rows': [], 'total_amount': 0.0, 'needs_review': 0}
+        try:
+            pay = self.env['account.payment']
+            flds = pay._fields
+            pair_field = 'paired_internal_transfer_payment_id' if 'paired_internal_transfer_payment_id' in flds else None
+            internal_flag = 'is_internal_transfer' if 'is_internal_transfer' in flds else None
+            if not pair_field and not internal_flag:
+                result['available'] = False
+                result['message'] = 'This Odoo 18 build does not expose the internal-transfer payment linkage field.'
+                return result
+
+            # Odoo 18 links the two sides of an internal transfer through
+            # paired_internal_transfer_payment_id. If an optional boolean
+            # internal-transfer flag is present, accept either signal.
+            if pair_field and internal_flag:
+                domain = ['|', (internal_flag, '=', True), (pair_field, '!=', False)]
+            elif pair_field:
+                domain = [(pair_field, '!=', False)]
+            else:
+                domain = [(internal_flag, '=', True)]
+            if 'payment_type' in flds:
+                domain.append(('payment_type', '=', 'outbound'))
+            if from_date and to_date:
+                domain += [('date', '>=', from_date), ('date', '<=', to_date)]
+            payments = pay.search(domain, order='date desc, id desc', limit=100)
+            pair_field = 'paired_internal_transfer_payment_id' if 'paired_internal_transfer_payment_id' in flds else None
+            destination_field = 'destination_journal_id' if 'destination_journal_id' in flds else None
+            matched_field = 'is_matched' if 'is_matched' in flds else None
+
+            for pmt in payments:
+                pair = getattr(pmt, pair_field) if pair_field else self.env['account.payment']
+                destination = getattr(pmt, destination_field) if destination_field else self.env['account.journal']
+                if not destination and pair:
+                    destination = pair.journal_id
+                if not destination:
+                    destination_name = 'Unknown / not linked'
+                else:
+                    destination_name = destination.name
+
+                pair_exists = bool(pair and pair.exists())
+                amount_ok = bool(pair_exists and abs(float(pair.amount or 0.0) - float(pmt.amount or 0.0)) < 0.01)
+                matched = bool(getattr(pmt, matched_field)) if matched_field else False
+                status = 'Paired' if pair_exists and amount_ok else 'Needs Review'
+                if pmt.state == 'draft':
+                    status = 'Draft'
+                elif pmt.state == 'in_process' and status == 'Paired':
+                    status = 'In Process'
+
+                result['rows'].append({
+                    'id': pmt.id,
+                    'name': pmt.name or f'Payment {pmt.id}',
+                    'date': self._fmt(pmt.date),
+                    'from_journal': pmt.journal_id.name or '',
+                    'to_journal': destination_name,
+                    'amount': round(float(pmt.amount or 0.0), 2),
+                    'state': pmt.state,
+                    'status': status,
+                    'paired_id': pair.id if pair_exists else 0,
+                    'matched': matched,
+                })
+                result['total_amount'] += float(pmt.amount or 0.0)
+                if status == 'Needs Review':
+                    result['needs_review'] += 1
+            result['total_amount'] = round(result['total_amount'], 2)
+            return result
+        except Exception as exc:
+            result['available'] = False
+            result['message'] = f'Unable to read internal transfers: {exc}'
+            return result
+
+    @api.model
+    def get_cash_forecast_secure(self, days=30):
+        """Return a due-date cash forecast while respecting ledger masking."""
+        today = fields.Date.context_today(self)
+        days = min(max(int(days or 30), 7), 60)
+        journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])], order='name asc')
+        security = self._ledger_security_rules_for_journals(journals)
+        visible_all = not any(info.get('masked') for info in security.values())
+
+        account_ids = journals.mapped('default_account_id').ids or [-1]
+        try:
+            self.env.cr.execute("""
+                SELECT COALESCE(SUM(aml.debit - aml.credit), 0.0)
+                FROM account_move_line aml
+                JOIN account_move am ON am.id = aml.move_id
+                WHERE aml.account_id = ANY(%s) AND am.state='posted' AND am.date <= %s
+            """, (account_ids, str(today)))
+            current_balance = float(self.env.cr.fetchone()[0] or 0.0)
+        except Exception:
+            current_balance = 0.0
+
+        end_day = today + timedelta(days=days)
+        daily = {}
+        try:
+            due_moves = self.env['account.move'].search([
+                ('state', '=', 'posted'),
+                ('payment_state', 'not in', ['paid', 'in_payment']),
+                ('invoice_date_due', '>=', str(today)),
+                ('invoice_date_due', '<=', str(end_day)),
+                ('move_type', 'in', ['out_invoice', 'out_refund', 'in_invoice', 'in_refund']),
+            ])
+            for move in due_moves:
+                due = move.invoice_date_due or move.invoice_date
+                ds = str(due)
+                daily.setdefault(ds, {'in': 0.0, 'out': 0.0})
+                amt = float(move.amount_residual or 0.0)
+                if move.move_type in ('out_invoice', 'in_refund'):
+                    daily[ds]['in'] += amt
+                else:
+                    daily[ds]['out'] += amt
+        except Exception:
+            pass
+
+        forecast = []
+        running = current_balance
+        min_balance = current_balance
+        min_date = str(today)
+        for i in range(days + 1):
+            d = today + timedelta(days=i)
+            ds = str(d)
+            flows = daily.get(ds, {'in': 0.0, 'out': 0.0})
+            running += flows['in'] - flows['out']
+            if running < min_balance:
+                min_balance = running
+                min_date = ds
+            forecast.append({
+                'date': ds,
+                'in': round(flows['in'], 2),
+                'out': round(flows['out'], 2),
+                'net': round(flows['in'] - flows['out'], 2),
+                'balance': None if not visible_all else round(running, 2),
+            })
+
+        total_in = round(sum(x['in'] for x in forecast), 2)
+        total_out = round(sum(x['out'] for x in forecast), 2)
+        return {
+            'days': days,
+            'from_date': str(today),
+            'to_date': str(end_day),
+            'balance_masked': not visible_all,
+            'current_balance': None if not visible_all else round(current_balance, 2),
+            'expected_in': total_in,
+            'expected_out': total_out,
+            'expected_net': round(total_in - total_out, 2),
+            'minimum_balance': None if not visible_all else round(min_balance, 2),
+            'minimum_balance_date': min_date if visible_all else '',
+            'forecast': forecast,
+        }
+
+    @api.model
+    def get_ultimate_controls(self, from_date=False, to_date=False):
+        """Production-oriented management control data for Stage 5.
+
+        The method is deliberately bounded and server-side. Regular users get
+        operational counts and non-sensitive summaries; managers/admins receive
+        financial detail. All monetary detail is omitted from the regular-user
+        payload rather than merely masked in the browser.
+        """
+        role = self._get_user_role()
+        can_manage = role in ('admin', 'manager')
+        today = fields.Date.context_today(self)
+
+        if from_date and to_date:
+            fd = fields.Date.from_string(from_date)
+            td = fields.Date.from_string(to_date)
+        else:
+            fd = today.replace(day=1)
+            td = today
+        next_day = td + timedelta(days=1)
+
+        result = {
+            'can_manage': can_manage,
+            'period': {'from_date': str(fd), 'to_date': str(td)},
+            'today_change': {'sales_today': 0.0, 'sales_yesterday': 0.0, 'sales_change_pct': None,
+                             'received_today': 0.0, 'received_yesterday': 0.0,
+                             'paid_today': 0.0, 'paid_yesterday': 0.0},
+            'salespeople': [],
+            'margin_watch': [],
+            'returns': {'count': 0, 'amount': 0.0, 'rate_pct': None, 'top_products': []},
+            'customer_risk': [],
+            'reconciliation': {'unreconciled_count': 0, 'unreconciled_amount': 0.0,
+                               'in_process_count': 0, 'in_process_amount': 0.0},
+            'data_quality': {'missing_product_barcode': 0, 'missing_product_category': 0,
+                             'non_positive_sale_price': 0, 'negative_stock_quants': 0,
+                             'customer_missing_email': 0},
+            'approval_queue': {'sales': [], 'purchases': [], 'sale_threshold': 0.0, 'purchase_threshold': 0.0},
+        }
+
+        try:
+            # -------- What changed today --------
+            self.env.cr.execute("""
+                SELECT COALESCE(SUM(CASE WHEN DATE(date_order)=%s THEN amount_total ELSE 0 END),0),
+                       COALESCE(SUM(CASE WHEN DATE(date_order)=%s THEN amount_total ELSE 0 END),0)
+                FROM sale_order
+                WHERE state IN ('sale','done') AND DATE(date_order) IN (%s,%s)
+            """, (str(today), str(today - timedelta(days=1)), str(today), str(today - timedelta(days=1))))
+            r=self.env.cr.fetchone()
+            result['today_change']['sales_today']=round(float(r[0] or 0),2)
+            result['today_change']['sales_yesterday']=round(float(r[1] or 0),2)
+            if result['today_change']['sales_yesterday']:
+                result['today_change']['sales_change_pct']=round((result['today_change']['sales_today']-result['today_change']['sales_yesterday'])/result['today_change']['sales_yesterday']*100,1)
+
+            self.env.cr.execute("""
+                SELECT
+                  COALESCE(SUM(CASE WHEN date=%s AND payment_type='inbound' AND state IN ('in_process','paid') THEN amount ELSE 0 END),0),
+                  COALESCE(SUM(CASE WHEN date=%s AND payment_type='inbound' AND state IN ('in_process','paid') THEN amount ELSE 0 END),0),
+                  COALESCE(SUM(CASE WHEN date=%s AND payment_type='outbound' AND state IN ('in_process','paid') THEN amount ELSE 0 END),0),
+                  COALESCE(SUM(CASE WHEN date=%s AND payment_type='outbound' AND state IN ('in_process','paid') THEN amount ELSE 0 END),0)
+                FROM account_payment WHERE date IN (%s,%s)
+            """, (str(today),str(today-timedelta(days=1)),str(today),str(today-timedelta(days=1)),str(today),str(today-timedelta(days=1))))
+            r=self.env.cr.fetchone()
+            result['today_change']['received_today']=round(float(r[0] or 0),2)
+            result['today_change']['received_yesterday']=round(float(r[1] or 0),2)
+            result['today_change']['paid_today']=round(float(r[2] or 0),2)
+            result['today_change']['paid_yesterday']=round(float(r[3] or 0),2)
+        except Exception:
+            pass
+
+        # -------- Salesperson performance --------
+        if can_manage:
+            try:
+                dom=[('state','in',['sale','done']),('date_order','>=',str(fd)),('date_order','<',str(next_day))]
+                groups=self.env['sale.order'].read_group(dom,['amount_total:sum'],['user_id'])
+                for g in groups:
+                    uid=g.get('user_id')
+                    name=uid[1] if isinstance(uid,(list,tuple)) else 'Unassigned'
+                    result['salespeople'].append({
+                        'id': uid[0] if isinstance(uid,(list,tuple)) else 0,
+                        'name': name,
+                        'orders': int(g.get('__count',0) or 0),
+                        'sales': round(float(g.get('amount_total',0) or 0),2),
+                    })
+                result['salespeople'].sort(key=lambda x:(x['sales'],x['orders']), reverse=True)
+                result['salespeople']=result['salespeople'][:10]
+            except Exception:
+                pass
+
+            # -------- Margin watch (current standard-cost estimate) --------
+            try:
+                where=["so.state IN ('sale','done')","sol.display_type IS NULL","sol.product_id IS NOT NULL", "so.date_order >= %s", "so.date_order < %s"]
+                self.env.cr.execute(f"""
+                    SELECT sol.order_id, so.name, so.partner_id, rp.name, sol.product_id,
+                           sol.product_uom_qty, sol.price_subtotal, COALESCE(pt.standard_price,0)
+                    FROM sale_order_line sol
+                    JOIN sale_order so ON so.id=sol.order_id
+                    LEFT JOIN res_partner rp ON rp.id=so.partner_id
+                    JOIN product_product pp ON pp.id=sol.product_id
+                    JOIN product_template pt ON pt.id=pp.product_tmpl_id
+                    WHERE {' AND '.join(where)}
+                    ORDER BY (sol.price_subtotal - sol.product_uom_qty*COALESCE(pt.standard_price,0)) ASC, sol.id ASC
+                    LIMIT 20
+                """, (str(fd),str(next_day)))
+                rows=self.env.cr.fetchall()
+                pids=[int(r[4]) for r in rows]
+                products=self.env['product.product'].browse(pids).exists()
+                names={p.id:p.display_name for p in products}
+                for order_id,order_name,partner_id,partner_name,pid,qty,sales,cost_unit in rows:
+                    qty=float(qty or 0); sales=float(sales or 0); cost=qty*float(cost_unit or 0); gross=sales-cost
+                    result['margin_watch'].append({
+                        'order_id':order_id,'order':order_name or '', 'partner_id':partner_id or 0,
+                        'partner':partner_name or 'Unknown','product_id':int(pid),'product':names.get(int(pid),'Unknown product'),
+                        'sales':round(sales,2),'estimated_cost':round(cost,2),'gross_profit':round(gross,2),
+                        'margin_pct':round(gross/sales*100,1) if sales else None,
+                    })
+            except Exception:
+                pass
+
+            # -------- Returns / refunds --------
+            try:
+                ref_dom=[('move_type','=','out_refund'),('state','=','posted'),('invoice_date','>=',str(fd)),('invoice_date','<',str(next_day))]
+                refg=self.env['account.move'].read_group(ref_dom,['amount_total:sum'],[])
+                result['returns']['count']=self.env['account.move'].search_count(ref_dom)
+                result['returns']['amount']=round(sum(float(g.get('amount_total',0) or 0) for g in refg),2)
+                sold_dom=[('move_type','=','out_invoice'),('state','=','posted'),('invoice_date','>=',str(fd)),('invoice_date','<',str(next_day))]
+                sold_g=self.env['account.move'].read_group(sold_dom,['amount_total:sum'],[])
+                sold_amount=sum(float(g.get('amount_total',0) or 0) for g in sold_g)
+                result['returns']['rate_pct']=round(result['returns']['amount']/sold_amount*100,1) if sold_amount else None
+                self.env.cr.execute("""
+                    SELECT aml.product_id, COALESCE(SUM(ABS(aml.quantity)),0) qty, COALESCE(SUM(ABS(aml.price_subtotal)),0) amount
+                    FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id
+                    WHERE am.move_type='out_refund' AND am.state='posted' AND am.invoice_date >= %s AND am.invoice_date < %s
+                      AND aml.display_type='product' AND aml.product_id IS NOT NULL
+                    GROUP BY aml.product_id ORDER BY amount DESC LIMIT 10
+                """, (str(fd),str(next_day)))
+                rrows=self.env.cr.fetchall(); pids=[int(r[0]) for r in rrows]
+                names={p.id:p.display_name for p in self.env['product.product'].browse(pids).exists()}
+                result['returns']['top_products']=[{'product_id':int(pid),'product':names.get(int(pid),'Unknown product'),'qty':round(float(qty or 0),2),'amount':round(float(amount or 0),2)} for pid,qty,amount in rrows]
+            except Exception:
+                pass
+
+            # -------- Customer risk --------
+            try:
+                self.env.cr.execute("""
+                    SELECT rp.id,rp.name,COALESCE(SUM(am.amount_residual),0) overdue,MAX(am.invoice_date) last_invoice
+                    FROM account_move am JOIN res_partner rp ON rp.id=am.partner_id
+                    WHERE am.move_type='out_invoice' AND am.state='posted'
+                      AND am.amount_residual > 0 AND am.invoice_date_due < CURRENT_DATE
+                    GROUP BY rp.id,rp.name ORDER BY overdue DESC LIMIT 15
+                """)
+                for rid,name,overdue,last_invoice in self.env.cr.fetchall():
+                    result['customer_risk'].append({'id':rid,'name':name or 'Unknown','overdue':round(float(overdue or 0),2),'last_invoice':str(last_invoice) if last_invoice else ''})
+            except Exception:
+                pass
+
+            # -------- Reconciliation --------
+            try:
+                bl=self.env['account.bank.statement.line']
+                if 'is_reconciled' in bl._fields:
+                    recs=bl.search([('is_reconciled','=',False),('journal_id.type','in',['bank','cash'])], limit=500)
+                    result['reconciliation']['unreconciled_count']=bl.search_count([('is_reconciled','=',False),('journal_id.type','in',['bank','cash'])])
+                    result['reconciliation']['unreconciled_amount']=round(sum(float(getattr(x,'amount',0) or 0) for x in recs),2)
+                p=self.env['account.payment']
+                ip=p.search([('state','=','in_process')], limit=500)
+                result['reconciliation']['in_process_count']=p.search_count([('state','=','in_process')])
+                result['reconciliation']['in_process_amount']=round(sum(float(x.amount or 0) for x in ip),2)
+            except Exception:
+                pass
+
+            # -------- Data quality --------
+            try:
+                product_model=self.env['product.product']
+                result['data_quality']['missing_product_barcode']=product_model.search_count([('active','=',True),('type','in',['product','consu']),('barcode','=',False)])
+                result['data_quality']['missing_product_category']=product_model.search_count([('active','=',True),('type','in',['product','consu']),('categ_id','=',False)])
+                result['data_quality']['non_positive_sale_price']=product_model.search_count([('active','=',True),('type','in',['product','consu']),('list_price','<=',0)])
+                result['data_quality']['negative_stock_quants']=self.env['stock.quant'].search_count([('quantity','<',0),('location_id.usage','=','internal')])
+                result['data_quality']['customer_missing_email']=self.env['res.partner'].search_count([('customer_rank','>',0),('active','=',True),('email','=',False)])
+            except Exception:
+                pass
+
+            try:
+                result['approval_queue']=self.get_approval_queue()
+            except Exception:
+                pass
+        else:
+            # Keep only low-sensitivity counts for basic dashboard users.
+            try:
+                result['salespeople']=[{'id':0,'name':'Restricted','orders':sum(x.get('orders',0) for x in result['salespeople']),'sales':None}]
+            except Exception:
+                result['salespeople']=[]
+        return result
+
+    @api.model
+    def get_executive_cockpit(self, from_date=False, to_date=False, action_center=None, ultimate=None):
+        """Compact executive snapshot for the top of the Business Dashboard.
+
+        This is intentionally bounded and safe for the browser. Financial detail
+        is returned only to dashboard managers/admins; basic users receive counts
+        and status indicators. The method also exposes the dashboard's own audit
+        events, exception signals and data-quality totals in one RPC.
+        """
+        today = fields.Date.context_today(self)
+        yesterday = today - timedelta(days=1)
+        role = self._get_user_role()
+        can_manage = role in ('admin', 'manager')
+
+        result = {
+            'role': role,
+            'company': self.env.company.name,
+            'generated_at': fields.Datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
+            'what_changed': {
+                'sales_today': 0.0 if can_manage else None,
+                'sales_yesterday': 0.0 if can_manage else None,
+                'sales_change_pct': None,
+                'orders_today': 0,
+                'orders_yesterday': 0,
+                'received_today': 0.0 if can_manage else None,
+                'received_yesterday': 0.0 if can_manage else None,
+                'paid_today': 0.0 if can_manage else None,
+                'paid_yesterday': 0.0 if can_manage else None,
+            },
+            'exceptions': {'open': 0, 'critical': 0},
+            'data_quality': {'total_flags': 0, 'checks': []},
+            'anomalies': [],
+            'audit': [],
+            'reorder': [],
+        }
+
+        # What changed today: ORM domains keep normal company/record rules in force.
+        try:
+            for day, key in ((today, 'today'), (yesterday, 'yesterday')):
+                sale_dom = [('state', 'in', ['sale','done']), ('date_order', '>=', str(day)), ('date_order', '<', str(day + timedelta(days=1)))]
+                result['what_changed'][f'orders_{key}'] = self.env['sale.order'].search_count(sale_dom)
+                if can_manage:
+                    sale_groups = self.env['sale.order'].read_group(sale_dom, ['amount_total:sum'], [])
+                    result['what_changed'][f'sales_{key}'] = round(sum(float(g.get('amount_total', 0.0) or 0.0) for g in sale_groups), 2)
+                pay_in_dom=[('date','=',str(day)),('payment_type','=','inbound'),('state','in',['in_process','paid'])]
+                pay_out_dom=[('date','=',str(day)),('payment_type','=','outbound'),('state','in',['in_process','paid'])]
+                if can_manage:
+                    in_groups=self.env['account.payment'].read_group(pay_in_dom,['amount:sum'],[])
+                    out_groups=self.env['account.payment'].read_group(pay_out_dom,['amount:sum'],[])
+                    result['what_changed'][f'received_{key}']=round(sum(float(g.get('amount',0.0) or 0.0) for g in in_groups),2)
+                    result['what_changed'][f'paid_{key}']=round(sum(float(g.get('amount',0.0) or 0.0) for g in out_groups),2)
+            if can_manage and result['what_changed']['sales_yesterday']:
+                result['what_changed']['sales_change_pct'] = round((result['what_changed']['sales_today'] - result['what_changed']['sales_yesterday']) / result['what_changed']['sales_yesterday'] * 100, 1)
+        except Exception:
+            pass
+
+        try:
+            ac = action_center if action_center is not None else self.get_action_center(from_date, to_date)
+            result['exceptions'] = {'open': int(ac.get('total_open', 0) or 0), 'critical': int(ac.get('critical', 0) or 0)}
+        except Exception:
+            pass
+
+        # Data-quality totals from the same server-side source used by Stage 5.
+        try:
+            u = ultimate if ultimate is not None else self.get_ultimate_controls(from_date, to_date)
+            dq = u.get('data_quality') or {}
+            checks = [
+                ('Missing product barcode', 'missing_product_barcode'),
+                ('Missing product category', 'missing_product_category'),
+                ('Non-positive sale price', 'non_positive_sale_price'),
+                ('Negative stock', 'negative_stock_quants'),
+                ('Customers without email', 'customer_missing_email'),
+            ]
+            result['data_quality']['checks'] = [{'label': label, 'count': int(dq.get(key, 0) or 0)} for label, key in checks]
+            result['data_quality']['total_flags'] = sum(x['count'] for x in result['data_quality']['checks'])
+        except Exception:
+            pass
+
+        # Bounded management-only signals.
+        if can_manage:
+            try:
+                result['anomalies'] = self.get_anomalies()[:10]
+            except Exception:
+                pass
+            try:
+                result['reorder'] = self.get_reorder_predictions()[:10]
+            except Exception:
+                pass
+            try:
+                logs = self.env['dashboard.audit.event'].search([('company_id','=',self.env.company.id)], limit=15)
+                result['audit'] = [{
+                    'id': x.id, 'user': x.user_id.name or 'Unknown', 'action': x.action,
+                    'model': x.model_name or '', 'reference': x.reference or '',
+                    'date': x.create_date.strftime('%d/%m %H:%M') if x.create_date else '',
+                    'details': x.details or '', 'record_id': x.record_id or 0,
+                } for x in logs]
+            except Exception:
+                pass
+        return result
+
+    @api.model
+    def get_control_center(self, from_date=False, to_date=False):
+        """Combined Stage 4 RPC to keep Business/Finance startup efficient."""
+        try:
+            action_center = self.get_action_center(from_date, to_date)
+        except Exception:
+            action_center = {'cards': [], 'total_open': 0, 'critical': 0, 'as_of': str(fields.Date.context_today(self))}
+        try:
+            transfer_monitor = self.get_transfer_monitor(from_date, to_date)
+        except Exception:
+            transfer_monitor = {'available': False, 'rows': [], 'total_amount': 0.0, 'needs_review': 0}
+        try:
+            cash_forecast = self.get_cash_forecast_secure(30)
+        except Exception:
+            cash_forecast = {'balance_masked': True, 'current_balance': None, 'expected_in': 0.0, 'expected_out': 0.0, 'expected_net': 0.0, 'forecast': []}
+        try:
+            ultimate = self.get_ultimate_controls(from_date, to_date)
+        except Exception:
+            ultimate = {'can_manage': False, 'period': {'from_date': str(fields.Date.context_today(self)), 'to_date': str(fields.Date.context_today(self))}, 'today_change': {}, 'salespeople': [], 'margin_watch': [], 'returns': {'count':0,'amount':0.0,'rate_pct':None,'top_products':[]}, 'customer_risk': [], 'reconciliation': {'unreconciled_count':0,'unreconciled_amount':0.0,'in_process_count':0,'in_process_amount':0.0}, 'data_quality': {'missing_product_barcode':0,'missing_product_category':0,'non_positive_sale_price':0,'negative_stock_quants':0,'customer_missing_email':0}, 'approval_queue': {'sales':[],'purchases':[],'sale_threshold':0,'purchase_threshold':0}}
+        try:
+            executive = self.get_executive_cockpit(from_date, to_date, action_center=action_center, ultimate=ultimate)
+        except Exception:
+            executive = {'role': self._get_user_role(), 'company': self.env.company.name, 'generated_at': fields.Datetime.now().strftime('%d/%m/%Y %H:%M:%S'), 'what_changed': {}, 'exceptions': {'open': 0, 'critical': 0}, 'data_quality': {'total_flags': 0, 'checks': []}, 'anomalies': [], 'audit': [], 'reorder': []}
+        return {'action_center': action_center, 'transfer_monitor': transfer_monitor, 'cash_flow_forecast': cash_forecast, 'ultimate': ultimate, 'executive': executive}
+
     # ─── Low stock snooze ────────────────────────────────────────────────────
     @api.model
     def snooze_low_stock_product(self, product_id, weeks):
@@ -266,6 +906,334 @@ class DashboardData(models.AbstractModel):
     def unsnooze_low_stock_product(self, product_id):
         self.env['dashboard.snoozed.product'].sudo().search([('product_id', '=', product_id)]).unlink()
         return True
+
+    # ─── Stage 2 + 3 Management Insights ─────────────────────────────────────
+    @api.model
+    def get_management_insights(self, from_date=False, to_date=False, daily_date=False):
+        """Management analytics for the Business Dashboard.
+
+        Stage 2:
+          * Sales performance with period comparisons and estimated margin.
+          * Product profitability using posted customer invoices and current
+            product standard cost (explicitly an estimate, not stock valuation).
+          * Inventory risk based on current on-hand quantity and recent sales velocity.
+
+        Stage 3:
+          * Store/warehouse comparison for the selected period.
+          * Daily closing snapshot for a selected calendar date.
+
+        Financially sensitive Stage 2/3 detail is restricted to Dashboard
+        Admins and Managers. The server does not send those details to regular
+        dashboard users even if a client-side template were modified.
+        """
+        today = fields.Date.today()
+        role = self._get_user_role()
+        can_manage = role in ('admin', 'manager')
+
+        def date_bounds(fd, td):
+            if not (fd and td):
+                return None, None
+            fd_d = fields.Date.from_string(fd)
+            td_d = fields.Date.from_string(td)
+            return fd_d, td_d
+
+        def safe_year_back(d):
+            try:
+                return d.replace(year=d.year - 1)
+            except ValueError:
+                return d.replace(year=d.year - 1, month=2, day=28)
+
+        fd_d, td_d = date_bounds(from_date, to_date)
+
+        # ---------------- Sales performance ----------------
+        sales_domain = [('state', 'in', ['sale', 'done'])]
+        if from_date and to_date:
+            next_day = td_d + timedelta(days=1)
+            sales_domain += [
+                ('date_order', '>=', str(fd_d)),
+                ('date_order', '<', str(next_day)),
+            ]
+        sales_groups = self.env['sale.order'].read_group(sales_domain, ['amount_total:sum'], [])
+        sales_total = round(sum(float(g.get('amount_total', 0.0) or 0.0) for g in sales_groups), 2)
+        order_count = self.env['sale.order'].search_count(sales_domain)
+        aov = round(sales_total / order_count, 2) if order_count else 0.0
+
+        previous_sales = 0.0
+        last_year_sales = 0.0
+        previous_orders = 0
+        last_year_orders = 0
+        comparison_available = bool(from_date and to_date)
+        if comparison_available:
+            span = (td_d - fd_d).days + 1
+            prev_to = fd_d - timedelta(days=1)
+            prev_from = prev_to - timedelta(days=span - 1)
+            ly_from = safe_year_back(fd_d)
+            ly_to = safe_year_back(td_d)
+
+            prev_domain = [('state', 'in', ['sale', 'done']), ('date_order', '>=', str(prev_from)), ('date_order', '<', str(prev_to + timedelta(days=1)))]
+            prev_groups = self.env['sale.order'].read_group(prev_domain, ['amount_total:sum'], [])
+            previous_sales = round(sum(float(g.get('amount_total', 0.0) or 0.0) for g in prev_groups), 2)
+            previous_orders = self.env['sale.order'].search_count(prev_domain)
+
+            ly_domain = [('state', 'in', ['sale', 'done']), ('date_order', '>=', str(ly_from)), ('date_order', '<', str(ly_to + timedelta(days=1)))]
+            ly_groups = self.env['sale.order'].read_group(ly_domain, ['amount_total:sum'], [])
+            last_year_sales = round(sum(float(g.get('amount_total', 0.0) or 0.0) for g in ly_groups), 2)
+            last_year_orders = self.env['sale.order'].search_count(ly_domain)
+
+        prev_change_pct = round((sales_total - previous_sales) / previous_sales * 100, 1) if previous_sales else None
+        ly_change_pct = round((sales_total - last_year_sales) / last_year_sales * 100, 1) if last_year_sales else None
+
+        estimated_revenue = 0.0
+        estimated_cost = 0.0
+        product_profitability = []
+
+        # Use posted customer invoices for profitability because they carry the
+        # real invoiced subtotal. Cost uses the CURRENT standard cost and is
+        # therefore explicitly labelled as estimated.
+        inv_line_where = ["am.move_type IN ('out_invoice','out_refund')", "am.state='posted'", "aml.display_type='product'", "aml.product_id IS NOT NULL"]
+        params = []
+        if from_date and to_date:
+            inv_line_where += ["am.invoice_date >= %s", "am.invoice_date <= %s"]
+            params += [from_date, to_date]
+        where_sql = ' AND '.join(inv_line_where)
+        self.env.cr.execute(f"""
+            SELECT aml.product_id,
+                   COALESCE(SUM(CASE WHEN am.move_type='out_refund' THEN -aml.quantity ELSE aml.quantity END),0),
+                   COALESCE(SUM(CASE WHEN am.move_type='out_refund' THEN -aml.price_subtotal ELSE aml.price_subtotal END),0)
+            FROM account_move_line aml
+            JOIN account_move am ON am.id=aml.move_id
+            WHERE {where_sql}
+            GROUP BY aml.product_id
+        """, params)
+        product_rows = self.env.cr.fetchall()
+        product_ids = [int(r[0]) for r in product_rows]
+        products = self.env['product.product'].browse(product_ids).exists()
+        product_map = {p.id: p for p in products}
+        for pid, qty, revenue in product_rows:
+            pdt = product_map.get(int(pid))
+            if not pdt:
+                continue
+            qty = float(qty or 0.0)
+            revenue = float(revenue or 0.0)
+            cost = qty * float(pdt.standard_price or 0.0)
+            gross = revenue - cost
+            margin = (gross / revenue * 100.0) if revenue else 0.0
+            estimated_revenue += revenue
+            estimated_cost += cost
+            product_profitability.append({
+                'product_id': pdt.id,
+                'product': pdt.display_name,
+                'qty_sold': round(qty, 2),
+                'sales': round(revenue, 2),
+                'estimated_cost': round(cost, 2),
+                'gross_profit': round(gross, 2),
+                'margin_pct': round(margin, 1),
+            })
+        product_profitability.sort(key=lambda r: (r['gross_profit'], r['sales']), reverse=True)
+        product_profitability = product_profitability[:20] if can_manage else []
+
+        estimated_gross_profit = round(estimated_revenue - estimated_cost, 2) if can_manage else None
+        estimated_margin_pct = round(estimated_gross_profit / estimated_revenue * 100.0, 1) if can_manage and estimated_revenue else None
+
+        # ---------------- Inventory risk ----------------
+        # Fixed recent-velocity window; it is independent from the dashboard
+        # finance filter so "days cover" stays comparable.
+        inv_start_30 = today - timedelta(days=29)
+        inv_start_90 = today - timedelta(days=89)
+        self.env.cr.execute("""
+            SELECT aml.product_id,
+                   COALESCE(SUM(CASE WHEN am.invoice_date >= %s THEN GREATEST(aml.quantity,0) ELSE 0 END),0),
+                   COALESCE(SUM(CASE WHEN am.invoice_date >= %s THEN GREATEST(aml.quantity,0) ELSE 0 END),0)
+            FROM account_move_line aml
+            JOIN account_move am ON am.id=aml.move_id
+            WHERE am.move_type='out_invoice' AND am.state='posted'
+              AND aml.display_type='product' AND aml.product_id IS NOT NULL
+              AND am.invoice_date >= %s
+            GROUP BY aml.product_id
+            ORDER BY SUM(GREATEST(aml.quantity,0)) DESC
+            LIMIT 300
+        """, (str(inv_start_30), str(inv_start_90), str(inv_start_90)))
+        velocity_rows = self.env.cr.fetchall()
+        velocity = {int(r[0]): (float(r[1] or 0.0), float(r[2] or 0.0)) for r in velocity_rows}
+
+        low_stock_products = self.env['product.product'].search([
+            ('active', '=', True), ('type', 'in', ['product', 'consu']), ('qty_available', '<=', 5)
+        ], limit=200)
+        candidate_ids = set(velocity.keys()) | set(low_stock_products.ids)
+        candidates = self.env['product.product'].browse(list(candidate_ids)).exists()
+        inventory_risk = []
+        for pdt in candidates:
+            qty_on_hand = float(pdt.qty_available or 0.0)
+            sold_30, sold_90 = velocity.get(pdt.id, (0.0, 0.0))
+            days_cover = None
+            if sold_30 > 0:
+                days_cover = qty_on_hand / (sold_30 / 30.0)
+            if qty_on_hand <= 0:
+                status = 'out_of_stock'
+                priority = 0
+            elif sold_30 > 0 and days_cover < 7:
+                status = 'critical'
+                priority = 1
+            elif sold_30 > 0 and days_cover < 14:
+                status = 'low'
+                priority = 2
+            elif sold_90 <= 0:
+                status = 'dead_stock_90d'
+                priority = 3
+            elif sold_30 <= 0:
+                status = 'no_sales_30d'
+                priority = 4
+            else:
+                status = 'healthy'
+                priority = 5
+            inventory_risk.append({
+                'product_id': pdt.id,
+                'product': pdt.display_name,
+                'qty_on_hand': round(qty_on_hand, 2),
+                'sold_30d': round(sold_30, 2),
+                'sold_90d': round(sold_90, 2),
+                'days_cover': round(days_cover, 1) if days_cover is not None else None,
+                'status': status,
+                '_priority': priority,
+                'uom': pdt.uom_id.name or '',
+            })
+        inventory_risk.sort(key=lambda r: (r['_priority'], r.get('days_cover') if r.get('days_cover') is not None else 999999, -r['sold_30d']))
+        for row in inventory_risk:
+            row.pop('_priority', None)
+        inventory_risk = inventory_risk[:40]
+
+        # ---------------- Warehouse comparison ----------------
+        warehouse_comparison = []
+        if can_manage:
+            warehouses = self.env['stock.warehouse'].search([], order='name asc')
+            sales_by_wh = {}
+            sale_groups = self.env['sale.order'].read_group(sales_domain, ['amount_total:sum'], ['warehouse_id'])
+            for g in sale_groups:
+                wid = g.get('warehouse_id')
+                if isinstance(wid, (list, tuple)) and wid:
+                    sales_by_wh[wid[0]] = {'name': wid[1], 'sales': float(g.get('amount_total', 0.0) or 0.0), 'orders': int(g.get('__count', 0) or 0)}
+                elif wid is False:
+                    sales_by_wh[0] = {'name': 'Unassigned', 'sales': float(g.get('amount_total', 0.0) or 0.0), 'orders': int(g.get('__count', 0) or 0)}
+
+            po_domain = [('state', 'in', ['purchase', 'done'])]
+            if from_date and to_date:
+                po_domain += [('date_order', '>=', str(fd_d)), ('date_order', '<', str(td_d + timedelta(days=1)))]
+            po_groups = self.env['purchase.order'].read_group(po_domain, ['amount_total:sum'], ['picking_type_id'])
+            picking_ids = [g['picking_type_id'][0] for g in po_groups if isinstance(g.get('picking_type_id'), (list, tuple)) and g.get('picking_type_id')]
+            picking_map = {p.id: p.warehouse_id.id for p in self.env['stock.picking.type'].browse(picking_ids)}
+            purchases_by_wh = {}
+            for g in po_groups:
+                pt = g.get('picking_type_id')
+                wid = picking_map.get(pt[0]) if isinstance(pt, (list, tuple)) and pt else 0
+                rec = purchases_by_wh.setdefault(wid, {'purchases': 0.0})
+                rec['purchases'] += float(g.get('amount_total', 0.0) or 0.0)
+
+            # Current warehouse stock at current standard cost. This is an
+            # operational stock-value estimate, not an accounting valuation.
+            stock_by_wh = {}
+            for wh in warehouses:
+                try:
+                    locations = self.env['stock.location'].search([
+                        ('id', 'child_of', wh.view_location_id.id), ('usage', '=', 'internal')
+                    ])
+                    quants = self.env['stock.quant'].search([('location_id', 'in', locations.ids), ('quantity', '!=', 0)])
+                    stock_by_wh[wh.id] = round(sum(float(q.quantity or 0.0) * float(q.product_id.standard_price or 0.0) for q in quants), 2)
+                except Exception:
+                    stock_by_wh[wh.id] = 0.0
+
+            for wh in warehouses:
+                sr = sales_by_wh.get(wh.id, {'sales': 0.0, 'orders': 0})
+                pr = purchases_by_wh.get(wh.id, {'purchases': 0.0})
+                warehouse_comparison.append({
+                    'warehouse_id': wh.id,
+                    'warehouse': wh.name,
+                    'sales': round(sr['sales'], 2),
+                    'orders': sr['orders'],
+                    'purchases': round(pr['purchases'], 2),
+                    'stock_value': round(stock_by_wh.get(wh.id, 0.0), 2),
+                    'sales_minus_purchases': round(sr['sales'] - pr['purchases'], 2),
+                })
+            if 0 in sales_by_wh:
+                sr = sales_by_wh[0]
+                warehouse_comparison.append({
+                    'warehouse_id': 0, 'warehouse': 'Unassigned', 'sales': round(sr['sales'], 2),
+                    'orders': sr['orders'], 'purchases': round(purchases_by_wh.get(0, {'purchases': 0.0})['purchases'], 2),
+                    'stock_value': 0.0,
+                    'sales_minus_purchases': round(sr['sales'] - purchases_by_wh.get(0, {'purchases': 0.0})['purchases'], 2),
+                })
+
+        # ---------------- Daily closing ----------------
+        closing = {
+            'date': str(fields.Date.from_string(daily_date)) if daily_date else str(today),
+            'sales_orders': 0, 'sales_amount': 0.0, 'customer_payments': 0,
+            'customer_received': 0.0, 'vendor_payments': 0, 'vendor_paid': 0.0,
+            'customer_invoices': 0, 'customer_invoice_amount': 0.0,
+            'vendor_bills': 0, 'vendor_bill_amount': 0.0,
+            'deliveries_done': 0, 'receipts_done': 0, 'internal_transfers_done': 0,
+            'draft_payments': 0, 'pending_deliveries': 0, 'pending_receipts': 0,
+            'net_cash_movement': 0.0, 'journal_moves': [],
+        }
+        if can_manage:
+            day = fields.Date.from_string(daily_date) if daily_date else today
+            next_day = day + timedelta(days=1)
+            so_domain = [('state', 'in', ['sale', 'done']), ('date_order', '>=', str(day)), ('date_order', '<', str(next_day))]
+            so_groups = self.env['sale.order'].read_group(so_domain, ['amount_total:sum'], [])
+            closing['sales_orders'] = self.env['sale.order'].search_count(so_domain)
+            closing['sales_amount'] = round(sum(float(g.get('amount_total', 0.0) or 0.0) for g in so_groups), 2)
+
+            pay_base = [('date', '=', str(day))]
+            in_domain = pay_base + [('payment_type', '=', 'inbound'), ('state', 'in', ['in_process', 'paid'])]
+            out_domain = pay_base + [('payment_type', '=', 'outbound'), ('state', 'in', ['in_process', 'paid'])]
+            in_groups = self.env['account.payment'].read_group(in_domain, ['amount:sum'], [])
+            out_groups = self.env['account.payment'].read_group(out_domain, ['amount:sum'], [])
+            drafts = self.env['account.payment'].search_count(pay_base + [('state', '=', 'draft')])
+            closing['customer_payments'] = self.env['account.payment'].search_count(in_domain)
+            closing['customer_received'] = round(sum(float(g.get('amount', 0.0) or 0.0) for g in in_groups), 2)
+            closing['vendor_payments'] = self.env['account.payment'].search_count(out_domain)
+            closing['vendor_paid'] = round(sum(float(g.get('amount', 0.0) or 0.0) for g in out_groups), 2)
+            closing['draft_payments'] = int(drafts)
+            closing['net_cash_movement'] = round(closing['customer_received'] - closing['vendor_paid'], 2)
+
+            inv_domain = [('move_type', '=', 'out_invoice'), ('state', '=', 'posted'), ('invoice_date', '=', str(day))]
+            bill_domain = [('move_type', '=', 'in_invoice'), ('state', '=', 'posted'), ('invoice_date', '=', str(day))]
+            inv_groups = self.env['account.move'].read_group(inv_domain, ['amount_total:sum'], [])
+            bill_groups = self.env['account.move'].read_group(bill_domain, ['amount_total:sum'], [])
+            closing['customer_invoices'] = self.env['account.move'].search_count(inv_domain)
+            closing['customer_invoice_amount'] = round(sum(float(g.get('amount_total', 0.0) or 0.0) for g in inv_groups), 2)
+            closing['vendor_bills'] = self.env['account.move'].search_count(bill_domain)
+            closing['vendor_bill_amount'] = round(sum(float(g.get('amount_total', 0.0) or 0.0) for g in bill_groups), 2)
+
+            done_domain = [('state', '=', 'done'), ('date_done', '>=', str(day)), ('date_done', '<', str(next_day))]
+            closing['deliveries_done'] = self.env['stock.picking'].search_count(done_domain + [('picking_type_id.code', '=', 'outgoing')])
+            closing['receipts_done'] = self.env['stock.picking'].search_count(done_domain + [('picking_type_id.code', '=', 'incoming')])
+            closing['internal_transfers_done'] = self.env['stock.picking'].search_count(done_domain + [('picking_type_id.code', '=', 'internal')])
+            closing['pending_deliveries'] = self.env['stock.picking'].search_count([('picking_type_id.code', '=', 'outgoing'), ('state', 'not in', ['done','cancel']), ('scheduled_date', '>=', str(day)), ('scheduled_date', '<', str(next_day))])
+            closing['pending_receipts'] = self.env['stock.picking'].search_count([('picking_type_id.code', '=', 'incoming'), ('state', 'not in', ['done','cancel']), ('scheduled_date', '>=', str(day)), ('scheduled_date', '<', str(next_day))])
+            closing['journal_moves'] = self.get_journal_balance(str(day), str(day))
+
+        return {
+            'sales_performance': {
+                'sales': sales_total,
+                'orders': order_count,
+                'aov': aov,
+                'previous_sales': previous_sales,
+                'last_year_sales': last_year_sales,
+                'previous_orders': previous_orders,
+                'last_year_orders': last_year_orders,
+                'vs_previous_pct': prev_change_pct,
+                'vs_last_year_pct': ly_change_pct,
+                'comparison_available': comparison_available,
+                'can_view_profit': can_manage,
+                'estimated_invoice_revenue': round(estimated_revenue, 2) if can_manage else None,
+                'estimated_cost': round(estimated_cost, 2) if can_manage else None,
+                'estimated_gross_profit': estimated_gross_profit,
+                'estimated_margin_pct': estimated_margin_pct,
+            },
+            'product_profitability': product_profitability,
+            'inventory_risk': inventory_risk,
+            'warehouse_comparison': warehouse_comparison,
+            'daily_closing': closing,
+        }
 
     # ─── Trend Chart Data ─────────────────────────────────────────────────────
     @api.model
@@ -537,6 +1505,8 @@ class DashboardData(models.AbstractModel):
             ('payment_state', 'not in', ['paid', 'in_payment']), ('invoice_date_due', '<', str(today))])
 
         journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])])
+        security = self._ledger_security_rules_for_journals(journals)
+        cash_balance_masked = any(info.get('masked') for info in security.values())
         account_ids = journals.mapped('default_account_id').ids or [-1]
         self.env.cr.execute("SELECT COALESCE(SUM(aml.debit-aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date<%s",
             (account_ids, str(fom)))
@@ -556,19 +1526,140 @@ class DashboardData(models.AbstractModel):
             'overdue_bills_count': len(overdue_bills), 'overdue_bills_amount': round(sum(overdue_bills.mapped('amount_residual')), 2),
             'due_soon_count': len(due_soon_bills), 'due_soon_amount': round(sum(due_soon_bills.mapped('amount_residual')), 2),
             'overdue_inv_count': len(overdue_inv), 'overdue_inv_amount': round(sum(overdue_inv.mapped('amount_residual')), 2),
-            'opening_cash': round(opening_cash, 2), 'month_in': round(month_in, 2),
-            'month_out': round(month_out, 2), 'current_cash': round(opening_cash + month_in - month_out, 2),
+            # Ledger Balance Security applies to balance values, not to the
+            # movement columns. Deposit/In and Withdraw/Out remain visible so
+            # users can audit cash movement and transfers. Opening/current
+            # aggregate balances stay protected whenever a contributing
+            # journal is protected, because revealing them could disclose a
+            # protected journal balance by subtraction.
+            'opening_cash': None if cash_balance_masked else round(opening_cash, 2),
+            'month_in': round(month_in, 2),
+            'month_out': round(month_out, 2),
+            'current_cash': None if cash_balance_masked else round(opening_cash + month_in - month_out, 2),
+            'cash_balance_masked': cash_balance_masked,
+            'cash_flow_movements_visible': True,
             'revenue': round(revenue, 2), 'costs': round(costs, 2),
             'gross_profit': round(revenue - costs, 2),
             'margin_pct': round((revenue - costs) / revenue * 100, 1) if revenue else 0,
+        }
+
+    # ─── Ledger balance security ──────────────────────────────────────────────
+    def _ledger_security_rules_for_journals(self, journals):
+        """Resolve effective ledger-balance visibility with a fresh server-side read.
+
+        The decision is intentionally made without relying on ORM record-rule
+        visibility or cached configuration.  The security configuration and the
+        approved-user relation are read directly from their PostgreSQL tables,
+        then the current request user's UID is checked against the approved-user
+        relation.  This makes the masking decision deterministic for every RPC
+        request, including Finance Dashboard, print and CSV calls.
+        """
+        journal_ids = journals.ids if hasattr(journals, 'ids') else [int(x) for x in (journals or [])]
+        journal_ids = [int(x) for x in journal_ids if x]
+        if not journal_ids:
+            return {}
+
+        # Read the configuration directly from PostgreSQL.  This avoids any
+        # stale ORM cache / record-rule interaction with the security model.
+        rule_map = {}
+        approved_map = {jid: set() for jid in journal_ids}
+        try:
+            self.env.cr.execute(
+                "SELECT id, journal_id, masked FROM dashboard_ledger_security "
+                "WHERE journal_id = ANY(%s)",
+                (journal_ids,),
+            )
+            for rule_id, journal_id, masked in self.env.cr.fetchall():
+                jid = int(journal_id)
+                # A journal should have one rule because of the SQL constraint,
+                # but treating any matching masked rule as protected is safer if
+                # an old database contains duplicate legacy rows.
+                existing = rule_map.get(jid)
+                rule_map[jid] = {
+                    'id': int(rule_id),
+                    'masked': bool(masked) or bool(existing and existing.get('masked')),
+                }
+
+            if rule_map:
+                rule_ids = list({v['id'] for v in rule_map.values()})
+                self.env.cr.execute(
+                    "SELECT security_id, user_id FROM dashboard_ledger_security_user_rel "
+                    "WHERE security_id = ANY(%s)",
+                    (rule_ids,),
+                )
+                rule_to_journal = {v['id']: jid for jid, v in rule_map.items()}
+                for security_id, user_id in self.env.cr.fetchall():
+                    jid = rule_to_journal.get(int(security_id))
+                    if jid in approved_map:
+                        approved_map[jid].add(int(user_id))
+        except Exception:
+            # Fall back to a fresh sudo ORM query for customized/legacy schemas.
+            # If that also fails, no rule is inferred and normal visibility is
+            # preserved rather than accidentally leaking a protected amount.
+            rule_map = {}
+            try:
+                rule_model = self.env['dashboard.ledger.security'].sudo()
+                for r in rule_model.search([('journal_id', 'in', journal_ids)]):
+                    jid = int(r.journal_id.id)
+                    rule_map[jid] = {'id': int(r.id), 'masked': bool(r.masked)}
+                    approved_map[jid] = set(r.approved_user_ids.ids)
+            except Exception:
+                pass
+
+        user = self.env.user
+        is_admin = bool(
+            user.has_group('eagle_business_dashboard.group_dashboard_admin')
+            or user.has_group('base.group_system')
+        )
+        uid = int(user.id)
+        result = {}
+        for journal_id in journal_ids:
+            rule = rule_map.get(int(journal_id))
+            rule_masked = bool(rule and rule.get('masked'))
+            # A protected journal is masked for everyone who is not explicitly
+            # approved, including Dashboard Admins and System Administrators.
+            # Those groups control configuration access; they are not an
+            # automatic visibility bypass.  This removes the ambiguity that
+            # previously made the rule appear ineffective when the tester was
+            # logged in with an administrator account.
+            explicitly_approved = uid in approved_map.get(int(journal_id), set())
+            masked = bool(rule_masked and not explicitly_approved)
+            result[int(journal_id)] = {
+                'configured': bool(rule),
+                'rule_masked': rule_masked,
+                'masked': masked,
+                'approved': explicitly_approved,
+                'administrator': is_admin,
+            }
+        return result
+
+    @api.model
+    def get_ledger_security_status(self, journal_ids=None):
+        """Expose only the current user's effective visibility state."""
+        if journal_ids:
+            journals = self.env['account.journal'].browse([int(x) for x in journal_ids]).exists()
+            journals = journals.filtered(lambda j: j.type in ('bank', 'cash'))
+        else:
+            journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])])
+        effective = self._ledger_security_rules_for_journals(journals)
+        return {
+            str(j.id): {
+                'masked': bool(effective.get(j.id, {}).get('masked')),
+                'approved': bool(effective.get(j.id, {}).get('approved')),
+                'administrator': bool(effective.get(j.id, {}).get('administrator')),
+            }
+            for j in journals
         }
 
     # ─── Journal Balance ─────────────────────────────────────────────────────
     @api.model
     def get_journal_balance(self, from_date=False, to_date=False):
         journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])], order='name asc')
+        security = self._ledger_security_rules_for_journals(journals)
         result = []
         for journal in journals:
+            balance_masked = bool(security.get(journal.id, {}).get('masked'))
+            approved = bool(security.get(journal.id, {}).get('approved'))
             account = journal.default_account_id
             if not account:
                 continue
@@ -593,15 +1684,21 @@ class DashboardData(models.AbstractModel):
             deposit = float(row[0] or 0)
             withdraw = float(row[1] or 0)
             change = deposit - withdraw
+            closing = round(opening + change, 2)
             result.append({'journal_id': journal.id, 'journal_name': journal.name,
-                'opening': round(opening, 2), 'deposit': round(deposit, 2), 'deposit_count': int(row[2] or 0),
+                'opening': None if balance_masked else round(opening, 2),
+                'deposit': round(deposit, 2), 'deposit_count': int(row[2] or 0),
                 'withdraw': round(withdraw, 2), 'withdraw_count': int(row[3] or 0),
-                'change': round(change, 2), 'closing': round(opening + change, 2)})
+                'change': round(change, 2), 'closing': None if balance_masked else closing,
+                'balance_masked': balance_masked, 'can_view_balance': not balance_masked,
+                'security_approved': approved,
+                'security_configured': bool(security.get(journal.id, {}).get('configured')),
+                'security_rule_masked': bool(security.get(journal.id, {}).get('rule_masked'))})
         return result
 
     @api.model
     def get_journal_transactions(self, journal_id, from_date=False, to_date=False):
-        domain = [('journal_id', '=', journal_id), ('state', 'in', ['in_process', 'paid'])]
+        domain = [('journal_id', '=', journal_id), ('state', 'in', ['draft', 'in_process', 'paid'])]
         if from_date:
             domain.append(('date', '>=', from_date))
         if to_date:
@@ -609,7 +1706,7 @@ class DashboardData(models.AbstractModel):
         payments = self.env['account.payment'].search(domain, order='date desc', limit=300)
         f = self._fmt
         return [{'id': p.id, 'name': p.name or 'Draft', 'partner': p.partner_id.name or '',
-                 'date': f(p.date), 'amount': p.amount, 'type': p.payment_type,
+                 'date': f(p.date), 'journal_id': p.journal_id.id, 'amount': p.amount, 'type': p.payment_type,
                  'received': p.amount if p.payment_type == 'inbound' else 0,
                  'paid': p.amount if p.payment_type == 'outbound' else 0,
                  'state': p.state} for p in payments]
@@ -624,6 +1721,7 @@ class DashboardData(models.AbstractModel):
         payment.ensure_one()
         if payment.state == 'draft':
             payment.action_post()
+            self._audit('Validate payment', 'account.payment', payment.id, payment.name or 'Draft', 'Dashboard payment validation')
         elif payment.state == 'in_process':
             # In Odoo 18, in_process means the payment has already been posted
             # but its outstanding/liquidity side is not yet reconciled. There is
@@ -642,18 +1740,30 @@ class DashboardData(models.AbstractModel):
     # ─── Dynamic List Action (for KPI card "view details" links) ─────────
     @api.model
     def open_dynamic_action(self, model, domain, name='Dashboard List'):
+        """Create a bounded Odoo 18 list/form action for dashboard drill-downs.
+
+        The dashboard only needs a fixed set of business models. Restricting the
+        target model prevents the generic RPC from becoming a model browser while
+        the normal Odoo ACLs/record rules still govern the opened view.
         """
-        Creates a real ir.actions.act_window record so that KPI card
-        drill-down links can open a proper Odoo 18 client action URL
-        (/odoo/action-<id>) in a new tab, instead of relying on the legacy
-        '/web#model=...&view_type=list' hash format which the Odoo 18
-        client no longer resolves reliably.
-        """
+        allowed_models = {
+            'account.move', 'account.payment', 'account.move.line',
+            'account.bank.statement.line', 'sale.order', 'purchase.order',
+            'stock.picking', 'product.product', 'res.partner', 'dashboard.audit.event',
+        }
+        if model not in allowed_models:
+            from odoo.exceptions import AccessError
+            raise AccessError('This dashboard drill-down model is not allowed.')
+        model_obj = self.env[model]
+        model_obj.check_access_rights('read')
+        if not isinstance(domain, list):
+            from odoo.exceptions import ValidationError
+            raise ValidationError('Invalid dashboard drill-down domain.')
         action = self.env['ir.actions.act_window'].sudo().create({
-            'name': name,
+            'name': str(name or 'Dashboard List')[:120],
             'res_model': model,
             'view_mode': 'list,form',
-            'domain': domain,
+            'domain': domain[:80],
             'target': 'current',
         })
         return action.id
@@ -713,6 +1823,7 @@ class DashboardData(models.AbstractModel):
         if picking.exists() and picking.state not in ('done', 'cancel'):
             try:
                 picking.button_validate()
+                self._audit('Validate picking', 'stock.picking', picking.id, picking.name, 'Dashboard validation')
                 return True
             except Exception:
                 return False
@@ -841,22 +1952,18 @@ class DashboardData(models.AbstractModel):
     # ─── Audit Trail Widget ─────────────────────────────────────────────────
     @api.model
     def get_audit_trail(self, limit=15):
-        result = []
-        try:
-            logs = self.env['mail.message'].search([
-                ('model', 'in', ['sale.order', 'purchase.order', 'account.move', 'account.payment']),
-                ('message_type', '=', 'notification'),
-            ], order='date desc', limit=limit)
-            for l in logs:
-                result.append({
-                    'model': l.model, 'res_id': l.res_id,
-                    'author': l.author_id.name or 'System',
-                    'date': l.date.strftime('%d/%m/%Y %H:%M') if l.date else '',
-                    'summary': (l.subject or l.preview or 'Record updated')[:80],
-                })
-        except Exception:
-            pass
-        return result
+        if self._get_user_role() not in ('admin', 'manager'):
+            return []
+        logs = self.env['dashboard.audit.event'].search(
+            [('company_id', '=', self.env.company.id)],
+            order='create_date desc, id desc', limit=max(1, min(int(limit or 15), 50))
+        )
+        return [{
+            'model': x.model_name or '', 'res_id': x.record_id or 0,
+            'author': x.user_id.name or 'System',
+            'date': x.create_date.strftime('%d/%m/%Y %H:%M') if x.create_date else '',
+            'summary': (x.action + ((' — ' + x.reference) if x.reference else ''))[:120],
+        } for x in logs]
 
     # ─── Duplicate Invoice/Payment Detector ────────────────────────────────
     @api.model
@@ -920,6 +2027,7 @@ class DashboardData(models.AbstractModel):
         order = self.env['sale.order'].browse(order_id)
         if order.exists() and order.state == 'draft':
             order.action_confirm()
+            self._audit('Approve sale order', 'sale.order', order.id, order.name, 'Dashboard approval')
             return True
         return False
 
@@ -928,6 +2036,7 @@ class DashboardData(models.AbstractModel):
         order = self.env['purchase.order'].browse(order_id)
         if order.exists() and order.state == 'draft':
             order.button_confirm()
+            self._audit('Approve purchase order', 'purchase.order', order.id, order.name, 'Dashboard approval')
             return True
         return False
 
@@ -943,7 +2052,7 @@ class DashboardData(models.AbstractModel):
         today_sales = float(self.env.cr.fetchone()[0] or 0)
 
         admins = self.env['res.users'].search([
-            ('groups_id', '=', self.env.ref('eagle_business_dashboard.group_dashboard_admin').id)
+            ('groups_id', 'in', [self.env.ref('eagle_business_dashboard.group_dashboard_admin').id])
         ])
         body = f"""
             <div style="font-family:sans-serif;max-width:560px;margin:0 auto;">
@@ -955,7 +2064,7 @@ class DashboardData(models.AbstractModel):
                 <tr><td style="padding:8px;border:1px solid #e5e7eb;">Overdue Invoices</td>
                     <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626;">{widgets['overdue_count']} (BDT {widgets['overdue_amount']:.2f})</td></tr>
                 <tr><td style="padding:8px;border:1px solid #e5e7eb;">Cash Balance</td>
-                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">BDT {finw['current_cash']:.2f}</td></tr>
+                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">{('BDT %.2f' % finw['current_cash']) if finw.get('current_cash') is not None else 'Protected'}</td></tr>
                 <tr><td style="padding:8px;border:1px solid #e5e7eb;">Low Stock Items</td>
                     <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;font-weight:700;">{len(widgets['low_stock'])}</td></tr>
               </table>
@@ -1029,6 +2138,7 @@ class DashboardData(models.AbstractModel):
                 ).create({})
                 wizard._create_payments()
                 count += 1
+                self._audit('Bulk mark paid', 'account.move', m.id, m.name, 'Invoice payment created from dashboard')
             except Exception as e:
                 errors.append(f"{m.name}: {str(e)[:120]}")
         return {'processed': count, 'errors': errors}
@@ -1060,16 +2170,68 @@ class DashboardData(models.AbstractModel):
 
     # ─── Quick Sale (barcode/POS style) ────────────────────────────────────
     @api.model
-    def get_product_options(self):
-        products = self.env['product.product'].search(
-            [('sale_ok', '=', True), ('active', '=', True)], limit=300, order='name asc')
-        return [{'id': p.id, 'name': p.display_name, 'price': p.list_price} for p in products]
+    def get_partner_options(self, search=''):
+        """Return a bounded list of partners for Quick Sale type-ahead search."""
+        search = (search or '').strip()
+        Partner = self.env['res.partner']
+        domain = [('active', '=', True)]
+        if search:
+            domain += ['|', '|', '|',
+                ('name', 'ilike', search),
+                ('ref', 'ilike', search),
+                ('email', 'ilike', search),
+                ('phone', 'ilike', search),
+            ]
+            order = 'name asc, id asc'
+        else:
+            order = 'write_date desc, id desc'
+        rows = Partner.search_read(domain, fields=['name', 'ref', 'email', 'phone'], limit=25, order=order)
+        return [{
+            'id': r['id'],
+            'name': r.get('name') or '',
+            'ref': r.get('ref') or '',
+            'email': r.get('email') or '',
+            'phone': r.get('phone') or '',
+        } for r in rows]
+
+    @api.model
+    def get_product_options(self, search=''):
+        """Return a small, server-side Quick Sale product suggestion list.
+
+        Searching is intentionally bounded to queries of at least two characters
+        and a maximum of 40 rows. The browser never receives the full catalog.
+        Matching covers product name, internal reference, and barcode.
+        """
+        search = (search or '').strip()
+        if len(search) < 2:
+            return []
+        domain = [
+            ('active', '=', True),
+            ('sale_ok', '=', True),
+            '|', '|',
+            ('name', 'ilike', search),
+            ('default_code', 'ilike', search),
+            ('barcode', 'ilike', search),
+        ]
+        rows = self.env['product.product'].search_read(
+            domain,
+            fields=['name', 'default_code', 'barcode', 'list_price'],
+            limit=30,
+            order='name asc, id asc',
+        )
+        return [{
+            'id': r['id'],
+            'name': r.get('name') or '',
+            'price': r.get('list_price') or 0.0,
+            'default_code': r.get('default_code') or '',
+            'barcode': r.get('barcode') or '',
+        } for r in rows]
 
     @api.model
     def create_quick_sale(self, partner_id, product_id, qty, price_unit=False):
         partner = self.env['res.partner'].browse(partner_id) if partner_id else self.env.ref('base.public_partner', raise_if_not_found=False)
         product = self.env['product.product'].browse(product_id)
-        if not product.exists():
+        if not product.exists() or not product.active or not product.sale_ok:
             return {'error': 'Product not found. Please pick a product from the list.'}
         if not qty or float(qty) <= 0:
             return {'error': 'Quantity must be greater than 0.'}
@@ -1110,6 +2272,7 @@ class DashboardData(models.AbstractModel):
                 'order_line': [(0, 0, line_vals)],
             })
 
+        self._audit('Quick Sale created', 'sale.order', order.id, order.name, 'Created or updated from Quick Sale wizard')
         return {'id': order.id, 'name': order.name, 'merged': merged}
 
     # ─── Vendor Scorecard ───────────────────────────────────────────────────
@@ -1170,6 +2333,134 @@ class DashboardData(models.AbstractModel):
         recs = self.env['dashboard.presence'].sudo().search([('last_seen', '>=', cutoff)])
         return [{'id': r.user_id.id, 'name': r.user_id.name} for r in recs if r.user_id]
 
+    # ─── Per-user dashboard preferences / customization ────────────────────
+    def _user_pref_key(self):
+        return f"eagle_dashboard.user_preferences.{self.env.uid}"
+
+    @api.model
+    def get_user_preferences(self):
+        defaults = {
+            "density": "comfortable",
+            "hidden_sections": [],
+            "collapse_on_load": True,
+            "show_hints": True,
+            "keyboard_shortcuts": True,
+            "refresh_mins": 5,
+            "auto_refresh": False,
+            "dark_mode": False,
+            "accent_color": self.env["ir.config_parameter"].sudo().get_param("eagle_dashboard.theme_color", "#4f5bd5"),
+            "workspace": "all",
+        }
+        raw = self.env["ir.config_parameter"].sudo().get_param(self._user_pref_key(), "")
+        try:
+            stored = json.loads(raw) if raw else {}
+        except Exception:
+            stored = {}
+        if not isinstance(stored, dict):
+            stored = {}
+        defaults.update(stored)
+        # Sanitize user-controlled values so malformed config cannot break the UI.
+        if defaults.get("density") not in ("comfortable", "compact"):
+            defaults["density"] = "comfortable"
+        if not isinstance(defaults.get("hidden_sections"), list):
+            defaults["hidden_sections"] = []
+        defaults["hidden_sections"] = [str(x) for x in defaults["hidden_sections"]][:100]
+        try:
+            defaults["refresh_mins"] = max(1, min(120, int(defaults.get("refresh_mins", 5))))
+        except Exception:
+            defaults["refresh_mins"] = 5
+        for key in ("collapse_on_load", "show_hints", "keyboard_shortcuts", "auto_refresh", "dark_mode"):
+            defaults[key] = bool(defaults.get(key))
+        color = defaults.get("accent_color") or "#4f5bd5"
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            color = "#4f5bd5"
+        defaults["accent_color"] = color
+        return defaults
+
+    @api.model
+    def save_user_preferences(self, preferences):
+        preferences = preferences if isinstance(preferences, dict) else {}
+        allowed = {
+            "density", "hidden_sections", "collapse_on_load", "show_hints",
+            "keyboard_shortcuts", "refresh_mins", "auto_refresh", "dark_mode",
+            "accent_color", "workspace",
+        }
+        clean = {k: preferences[k] for k in allowed if k in preferences}
+        if clean.get("workspace") not in (None, "all", "executive", "finance", "sales", "operations", "minimal"):
+            clean["workspace"] = "all"
+        if clean.get("density") not in (None, "comfortable", "compact"):
+            clean["density"] = "comfortable"
+        if "hidden_sections" in clean:
+            hs = clean["hidden_sections"] if isinstance(clean["hidden_sections"], list) else []
+            clean["hidden_sections"] = [str(x) for x in hs][:100]
+        if "refresh_mins" in clean:
+            try:
+                clean["refresh_mins"] = max(1, min(120, int(clean["refresh_mins"])))
+            except Exception:
+                clean["refresh_mins"] = 5
+        for key in ("collapse_on_load", "show_hints", "keyboard_shortcuts", "auto_refresh", "dark_mode"):
+            if key in clean:
+                clean[key] = bool(clean[key])
+        if "accent_color" in clean:
+            color = clean["accent_color"]
+            if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                clean["accent_color"] = "#4f5bd5"
+        self.env["ir.config_parameter"].sudo().set_param(self._user_pref_key(), json.dumps(clean))
+        return self.get_user_preferences()
+
+    @api.model
+    def reset_user_preferences(self):
+        self.env["ir.config_parameter"].sudo().set_param(self._user_pref_key(), "")
+        return self.get_user_preferences()
+
+    @api.model
+    def get_dashboard_health(self):
+        """Return a lightweight self-diagnostic for administrators/managers.
+
+        The check is intentionally read-only and tolerant of customized Odoo
+        databases. It reports capabilities/configuration, not a fake "pass"
+        against the live application runtime.
+        """
+        can_view = bool(self.env.user.has_group("eagle_business_dashboard.group_dashboard_admin") or
+                        self.env.user.has_group("base.group_system") or
+                        self.env.user.has_group("eagle_business_dashboard.group_dashboard_manager"))
+        if not can_view:
+            return {"allowed": False, "checks": []}
+
+        checks = []
+        required_models = {
+            "sale.order": "Sales", "purchase.order": "Purchases",
+            "account.move": "Accounting", "account.payment": "Payments",
+            "stock.picking": "Inventory",
+        }
+        for model, label in required_models.items():
+            ok = model in self.env.registry.models
+            checks.append({"key": f"model_{model}", "label": f"{label} model", "status": "ok" if ok else "warning",
+                           "detail": "Available" if ok else "Model is not available in this Odoo database."})
+
+        index_names = [
+            "sale_order_company_state_date_idx",
+            "account_payment_company_journal_date_state_idx",
+            "account_move_company_type_state_date_idx",
+            "account_move_company_due_idx",
+        ]
+        existing = set()
+        try:
+            self.env.cr.execute("SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ANY(%s)", (index_names,))
+            existing = {r[0] for r in self.env.cr.fetchall()}
+        except Exception:
+            pass
+        for name in index_names:
+            checks.append({"key": f"idx_{name}", "label": name, "status": "ok" if name in existing else "warning",
+                           "detail": "Present" if name in existing else "Optional performance index is not present yet."})
+
+        cron = self.env.ref("eagle_business_dashboard.cron_daily_digest", raise_if_not_found=False)
+        checks.append({"key": "daily_digest", "label": "Daily digest", "status": "ok" if cron else "warning",
+                       "detail": "Scheduled action found" if cron else "Scheduled action not found."})
+        checks.append({"key": "ledger_rules", "label": "Ledger security rules", "status": "ok",
+                       "detail": f"{self.env['dashboard.ledger.security'].search_count([])} journal rule(s) configured."})
+        return {"allowed": True, "checks": checks, "generated_at": fields.Datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
     # ─── Theme color ─────────────────────────────────────────────────────
     @api.model
     def get_theme_color(self):
@@ -1216,7 +2507,9 @@ class DashboardData(models.AbstractModel):
             parts.append(f"{fin['overdue_inv_count']} invoice(s) are overdue (BDT {fin['overdue_inv_amount']:.0f})")
         if widgets.get('low_stock'):
             parts.append(f"{len(widgets['low_stock'])} product(s) are running low on stock")
-        if fin.get('current_cash', 0) < 0:
+        if fin.get('cash_balance_masked'):
+            parts.append("some cash balances are protected by ledger visibility settings")
+        elif (fin.get('current_cash') or 0) < 0:
             parts.append("cash balance is currently negative — review outstanding payments")
         if not parts:
             return "Everything looks steady today — no urgent items to flag."
