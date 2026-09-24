@@ -11,11 +11,6 @@
       </div>
       <t t-esc="state.companyName || 'Operations Dashboard'"/>
     </div>
-    <div class="eagle-nav">
-      <button class="eagle-nav-btn" t-on-click="goToBusinessDashboard">Business</button>
-      <button class="eagle-nav-btn" t-on-click="goToFinanceDashboard">Finance</button>
-      <button class="eagle-nav-btn active">Operations</button>
-    </div>
     <div class="eagle-header-actions">
       <t t-if="state.onlineUsers.length > 0">
         <div class="eagle-presence-strip" t-att-title="state.onlineUsers.map(u=>u.name).join(', ')">

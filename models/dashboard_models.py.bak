@@ -165,26 +165,13 @@ class DashboardLedgerSecurity(models.Model):
             [("active", "=", True), ("share", "=", False)], order="name asc"
         )
         rules = {r.journal_id.id: r for r in self.search([])}
-        current_user = self.env.user
         return {
-            "current_user": {
-                "id": current_user.id,
-                "name": current_user.name,
-                "administrator": bool(
-                    current_user.has_group("eagle_business_dashboard.group_dashboard_admin")
-                    or current_user.has_group("base.group_system")
-                ),
-                "note": "Administrator status grants configuration access only; it does not bypass a masked journal. The user must be explicitly approved for that journal.",
-            },
             "journals": [
                 {
                     "id": j.id,
                     "name": j.name,
                     "masked": bool(rules[j.id].masked) if j.id in rules else False,
                     "approved_user_ids": rules[j.id].approved_user_ids.ids if j.id in rules else [],
-                    "current_user_approved": bool(
-                        rules[j.id] and current_user.id in rules[j.id].approved_user_ids.ids
-                    ) if j.id in rules else False,
                 }
                 for j in journals
             ],

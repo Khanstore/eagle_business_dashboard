@@ -1,6 +1,6 @@
 <templates xml:space="preserve">
 <t t-name="advanced_business_dashboard.dashboard">
-<div t-attf-class="eagle-app #{state.darkMode ? 'dark' : ''}" t-att-style="themeStyle + 'height:100%;display:flex;flex-direction:column;'">
+<div t-attf-class="eagle-app #{state.darkMode ? 'dark' : ''} #{state.userPrefs.density==='compact'?'compact':''} #{state.userPrefs.show_hints===false?'no-hints':''}" t-att-style="themeStyle + 'height:100%;display:flex;flex-direction:column;'">
 
   <!-- ══ HEADER ══ -->
   <div class="eagle-header">
@@ -10,11 +10,6 @@
         <i t-if="!state.companyId" class="fa fa-store" style="color:#fff"/>
       </div>
       <t t-esc="state.companyName || 'Business Dashboard'"/>
-    </div>
-    <div class="eagle-nav">
-      <button class="eagle-nav-btn active">Business</button>
-      <button class="eagle-nav-btn" t-on-click="goToFinanceDashboard">Finance</button>
-      <button class="eagle-nav-btn" t-on-click="goToOperationsDashboard">Operations</button>
     </div>
     <!-- Quick Search -->
     <div class="eagle-search-wrap" t-if="vis('quick_search')">
@@ -73,7 +68,7 @@
       <button t-attf-class="eagle-bell-btn #{state.notificationsEnabled?'active':''}" t-on-click="toggleNotifications" title="Toggle push notifications">
         <i class="fa fa-bell-o"/>
       </button>
-      <button class="ebtn ebtn-sm ebtn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" t-on-click="openShareModal" title="Share a read-only snapshot">
+      <button class="ebtn ebtn-sm ebtn-outline eagle-header-action-btn" t-on-click="openShareModal" title="Share a read-only snapshot">
         <i class="fa fa-share-alt"/>
       </button>
       <button class="eagle-darkmode-btn" t-on-click="toggleDarkMode" title="Toggle dark mode">
@@ -87,11 +82,23 @@
         <i t-attf-class="fa #{state.autoRefresh?'fa-pause':'fa-refresh'}"/>
         <t t-esc="state.autoRefresh?'Stop':'Auto'"/>
       </button>
+      <button class="ebtn ebtn-sm ebtn-outline eagle-header-action-btn" t-on-click="openCustomize" title="Customize your dashboard">
+        <i class="fa fa-sliders"/> Customize
+      </button>
+      <t t-if="state.role==='admin' or state.role==='manager'">
+        <button class="ebtn ebtn-sm ebtn-outline eagle-header-action-btn" t-on-click="openHealth" title="Run read-only dashboard diagnostics">
+          <i class="fa fa-heartbeat"/> Health
+        </button>
+      </t>
       <t t-if="vis('settings') and state.role==='admin'">
-        <button class="ebtn ebtn-sm ebtn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" t-on-click="openSettings">
+        <button class="ebtn ebtn-sm ebtn-outline eagle-header-action-btn" t-on-click="openSettings">
           <i class="fa fa-cog"/> Settings
         </button>
       </t>
+      <span class="eagle-refresh-status" t-att-title="state.loading ? 'Refreshing dashboard data' : 'Last updated '+(state.lastUpdated||'not yet')">
+        <i t-attf-class="fa #{state.loading?'fa-spinner fa-spin':'fa-clock-o'}"/>
+        <t t-if="state.loading">Refreshing…</t><t t-else="">Updated <t t-esc="state.lastUpdated || '—'"/></t>
+      </span>
       <button class="eagle-print-btn" t-on-click="openPrintModal"><i class="fa fa-print"/> Print</button>
     </div>
   </div>
@@ -106,6 +113,13 @@
   </t>
 
   <div class="eagle-body" style="flex:1;overflow-y:auto;padding:20px 24px 40px;">
+
+    <t t-if="hasLoadError">
+      <div class="eagle-alert eagle-alert-warn eagle-data-alert">
+        <div><i class="fa fa-exclamation-triangle me-2"/>Some optional dashboard data could not be loaded: <strong><t t-esc="state.loadErrors.join(', ')"/></strong>. Existing data is preserved.</div>
+        <button class="ebtn ebtn-sm ebtn-outline" t-on-click="retryLoad" t-att-disabled="state.loading"><i class="fa fa-refresh"/> Retry</button>
+      </div>
+    </t>
 
     <!-- ══ COMMAND PALETTE (Ctrl+K) ══ -->
     <t t-if="state.showCommandPalette">
@@ -253,6 +267,87 @@
       </div>
     </t>
 
+    <!-- ══ PERSONAL CUSTOMIZATION MODAL ══ -->
+    <t t-if="state.showCustomize">
+      <div class="eagle-modal-backdrop">
+        <div class="eagle-modal eagle-customize-modal">
+          <div class="eagle-modal-header">
+            <div><h5 class="eagle-modal-title"><i class="fa fa-sliders me-2"/>Customize My Dashboard</h5><div class="text-muted small mt-1">Personal settings only. Administrator visibility rules still apply.</div></div>
+            <button class="ebtn ebtn-ghost ebtn-icon" t-on-click="closeCustomize"><i class="fa fa-times"/></button>
+          </div>
+          <div class="eagle-modal-body">
+            <div class="eagle-card-inner">
+              <div class="eagle-customize-grid">
+                <div class="eagle-customize-panel">
+                  <div class="eagle-customize-title"><i class="fa fa-paint-brush"/> Appearance</div>
+                  <div class="eagle-settings-item"><span>Compact density</span><input class="form-check-input" type="checkbox" t-att-checked="state.customizeDraft.density==='compact'" t-on-change="()=>this.state.customizeDraft.density=state.customizeDraft.density==='compact'?'comfortable':'compact'"/></div>
+                  <div class="eagle-settings-item"><span>Dark mode</span><input class="form-check-input" type="checkbox" t-att-checked="state.customizeDraft.dark_mode" t-on-change="()=>this.state.customizeDraft.dark_mode=!state.customizeDraft.dark_mode"/></div>
+                  <div class="eagle-settings-item"><span>Show guidance notes</span><input class="form-check-input" type="checkbox" t-att-checked="state.customizeDraft.show_hints" t-on-change="()=>this.state.customizeDraft.show_hints=!state.customizeDraft.show_hints"/></div>
+                  <label class="form-label small text-muted mt-2">Accent color</label>
+                  <div class="d-flex align-items-center gap-2"><input type="color" t-model="state.customizeDraft.accent_color" style="width:44px;height:32px;border:none;border-radius:6px;cursor:pointer;"/><span class="text-muted small"><t t-esc="state.customizeDraft.accent_color"/></span></div>
+                </div>
+
+                <div class="eagle-customize-panel">
+                  <div class="eagle-customize-title"><i class="fa fa-refresh"/> Refresh &amp; usability</div>
+                  <div class="eagle-settings-item"><span>Auto refresh</span><input class="form-check-input" type="checkbox" t-att-checked="state.customizeDraft.auto_refresh" t-on-change="()=>this.state.customizeDraft.auto_refresh=!state.customizeDraft.auto_refresh"/></div>
+                  <label class="form-label small text-muted">Refresh interval</label>
+                  <select class="form-select form-select-sm mb-2" t-model="state.customizeDraft.refresh_mins">
+                    <option value="1">1 minute</option><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option>
+                  </select>
+                  <div class="eagle-settings-item"><span>Keep sections folded on load</span><input class="form-check-input" type="checkbox" t-att-checked="state.customizeDraft.collapse_on_load" t-on-change="()=>this.state.customizeDraft.collapse_on_load=!state.customizeDraft.collapse_on_load"/></div>
+                  <div class="eagle-settings-item"><span>Keyboard shortcuts</span><input class="form-check-input" type="checkbox" t-att-checked="state.customizeDraft.keyboard_shortcuts" t-on-change="()=>this.state.customizeDraft.keyboard_shortcuts=!state.customizeDraft.keyboard_shortcuts"/></div>
+                </div>
+              </div>
+
+              <hr class="my-3"/>
+              <div class="eagle-customize-title"><i class="fa fa-th-large"/> Quick workspace presets</div>
+              <div class="eagle-workspace-presets">
+                <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.applyWorkspacePreset('executive')"><i class="fa fa-dashboard"/> Executive</button>
+                <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.applyWorkspacePreset('finance')"><i class="fa fa-money"/> Finance Focus</button>
+                <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.applyWorkspacePreset('sales')"><i class="fa fa-shopping-cart"/> Sales Focus</button>
+                <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.applyWorkspacePreset('operations')"><i class="fa fa-truck"/> Operations</button>
+                <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.applyWorkspacePreset('minimal')"><i class="fa fa-minus-circle"/> Minimal</button>
+                <button class="ebtn ebtn-sm ebtn-primary" t-on-click="()=>this.applyWorkspacePreset('all')"><i class="fa fa-th"/> Show All</button>
+              </div>
+
+              <div class="eagle-customize-title mt-3"><i class="fa fa-eye"/> My visible sections</div>
+              <p class="text-muted small mb-3">Turn off sections you do not use. This does not override administrator/security restrictions.</p>
+              <div class="eagle-customize-section-list">
+                <t t-foreach="customizableSectionEntries" t-as="entry" t-key="entry[0]">
+                  <label class="eagle-customize-section-item">
+                    <span><t t-esc="entry[1]"/></span>
+                    <input class="form-check-input" type="checkbox" t-att-checked="isCustomSectionVisible(entry[0])" t-on-change="()=>this.toggleCustomSection(entry[0])"/>
+                  </label>
+                </t>
+              </div>
+            </div>
+          </div>
+          <div class="eagle-modal-footer">
+            <button class="ebtn ebtn-outline" t-on-click="resetCustomize" t-att-disabled="state.customizeBusy"><i class="fa fa-undo"/> Reset</button>
+            <div class="ms-auto d-flex align-items-center gap-2"><t t-if="state.customizeSaved"><span class="eagle-notes-saved"><i class="fa fa-check"/>Saved</span></t><button class="ebtn ebtn-outline" t-on-click="closeCustomize">Cancel</button><button class="ebtn ebtn-primary" t-on-click="saveCustomize" t-att-disabled="state.customizeBusy"><i t-attf-class="fa #{state.customizeBusy?'fa-spinner fa-spin':'fa-save'}"/> Save My Dashboard</button></div>
+          </div>
+        </div>
+      </div>
+    </t>
+
+    <!-- ══ DASHBOARD HEALTH MODAL ══ -->
+    <t t-if="state.showHealth">
+      <div class="eagle-modal-backdrop">
+        <div class="eagle-modal eagle-target-modal" style="max-width:760px;">
+          <div class="eagle-modal-header"><h5 class="eagle-modal-title"><i class="fa fa-heartbeat me-2"/>Dashboard Health</h5><button class="ebtn ebtn-ghost ebtn-icon" t-on-click="closeHealth"><i class="fa fa-times"/></button></div>
+          <div class="eagle-modal-body"><div class="eagle-card-inner">
+            <t t-if="state.healthLoading"><div class="text-center text-muted py-5"><i class="fa fa-spinner fa-spin fa-2x mb-2"/><div>Running read-only diagnostics…</div></div></t>
+            <t t-elif="!state.health.allowed"><div class="eagle-alert eagle-alert-danger">Health diagnostics require Manager/Admin access.</div></t>
+            <t t-else="">
+              <div class="eagle-health-grid"><t t-foreach="state.health.checks" t-as="c" t-key="c.key"><div class="eagle-health-item"><div><strong><t t-esc="c.label"/></strong><div class="text-muted small"><t t-esc="c.detail"/></div></div><span t-attf-class="ebadge #{c.status==='ok'?'ebadge-green':'ebadge-yellow'}"><i t-attf-class="fa #{c.status==='ok'?'fa-check':'fa-exclamation-triangle'} me-1"/><t t-esc="c.status==='ok'?'Ready':'Review'"/></span></div></t></div>
+              <div class="text-muted small mt-3">Read-only check generated <t t-esc="state.health.generated_at"/>.</div>
+            </t>
+          </div></div>
+          <div class="eagle-modal-footer"><button class="ebtn ebtn-outline" t-on-click="closeHealth">Close</button></div>
+        </div>
+      </div>
+    </t>
+
     <!-- ══ SETTINGS MODAL ══ -->
     <t t-if="state.showSettings">
       <div class="eagle-modal-backdrop">
@@ -267,7 +362,7 @@
                     <i t-attf-class="fa #{role==='admin'?'fa-star':role==='manager'?'fa-briefcase':'fa-user'} me-1"/>
                     <t t-esc="role.charAt(0).toUpperCase()+role.slice(1)"/>
                   </div>
-                  <t t-foreach="Object.entries(state.section_labels)" t-as="entry" t-key="entry[0]">
+                  <t t-foreach="getSectionLabelEntries()" t-as="entry" t-key="entry[0]">
                     <div class="eagle-settings-item">
                       <span><t t-esc="entry[1]"/></span>
                       <div class="form-check form-switch mb-0">
@@ -303,6 +398,7 @@
             </div>
           </div></div>
           <div class="eagle-modal-footer">
+            <button class="ebtn ebtn-outline" t-on-click="openHealth"><i class="fa fa-heartbeat me-1"/> Health Check</button>
             <t t-if="state.settingsSaved"><span class="eagle-notes-saved"><i class="fa fa-check"/>Saved!</span></t>
             <button class="ebtn ebtn-outline" t-on-click="closeSettings">Cancel</button>
             <button class="ebtn ebtn-primary" t-on-click="saveSettings"><i class="fa fa-save me-1"/>Save Settings</button>
@@ -444,7 +540,7 @@
               <t t-esc="animMonthSales"/>
               <t t-if="state.financial.previous_sales">
                 <span t-attf-class="eagle-benchmark-arrow #{multiPeriodPositive?'money-in':'money-out'}">
-                  <i t-attf-class="fa #{multiPeriodPositive?'fa-arrow-up':'fa-arrow-down'}"/><t t-esc="Math.abs(multiPeriodVsPrev)"/>%
+                  <i t-attf-class="fa #{multiPeriodPositive?'fa-arrow-up':'fa-arrow-down'}"/><t t-esc="absAmount(multiPeriodVsPrev)"/>%
                 </span>
               </t>
             </div>
@@ -595,26 +691,160 @@
       </div>
     </div>
 
+    <!-- ══ ULTIMATE — EXECUTIVE CONTROL PANEL ══ -->
+    <t t-if="vis('ultimate_control')">
+      <div class="eagle-card eagle-stage-card eagle-executive-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-line-chart"/>Executive Control Panel</h4>
+          <div class="d-flex align-items-center gap-2">
+            <span class="text-muted small"><t t-esc="state.executive.company"/> · <t t-esc="state.executive.generated_at"/></span>
+            <button class="ebtn ebtn-sm ebtn-outline" t-on-click="toggleExecutive" t-att-aria-expanded="state.executiveOpen" title="Show / hide executive control panel"><i t-attf-class="fa #{state.executiveOpen?'fa-chevron-up':'fa-chevron-down'}"/></button>
+          </div>
+        </div>
+        <t t-if="state.executiveOpen">
+          <div class="eagle-mini-kpi-grid">
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Sales Today</div><div class="eagle-mini-kpi-value"><t t-if="state.executive.what_changed.sales_today!==null and state.executive.what_changed.sales_today!==undefined">BDT <t t-esc="formatAmount(state.executive.what_changed.sales_today)"/></t><t t-else="">••••••</t></div><div class="eagle-mini-kpi-sub"><t t-esc="state.executive.what_changed.orders_today||0"/> order(s) · <t t-if="state.executive.what_changed.sales_change_pct!==null and state.executive.what_changed.sales_change_pct!==undefined"><t t-esc="state.executive.what_changed.sales_change_pct"/>% vs yesterday</t><t t-else="">No prior-day base</t></div></div>
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Customer Received</div><div class="eagle-mini-kpi-value"><t t-if="state.executive.what_changed.received_today!==null and state.executive.what_changed.received_today!==undefined">BDT <t t-esc="formatAmount(state.executive.what_changed.received_today)"/></t><t t-else="">••••••</t></div><div class="eagle-mini-kpi-sub"><t t-esc="state.executive.what_changed.orders_yesterday||0"/> prior-day order(s)</div></div>
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Open Exceptions</div><div class="eagle-mini-kpi-value"><t t-esc="state.executive.exceptions.open||0"/></div><div class="eagle-mini-kpi-sub"><t t-esc="state.executive.exceptions.critical||0"/> critical</div></div>
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Data Quality</div><div class="eagle-mini-kpi-value"><t t-esc="state.executive.data_quality.total_flags||0"/></div><div class="eagle-mini-kpi-sub">flag(s) requiring review</div></div>
+          </div>
+          <div class="eagle-executive-grid">
+            <div class="eagle-card eagle-subcard">
+              <div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-bolt"/>What Changed Today</h5></div>
+              <div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Metric</th><th class="text-end">Today</th><th class="text-end">Yesterday</th></tr></thead><tbody>
+                <tr><td>Sales today</td><td class="text-end"><t t-if="state.executive.what_changed.sales_today!==null and state.executive.what_changed.sales_today!==undefined">BDT <t t-esc="formatAmount(state.executive.what_changed.sales_today)"/></t><t t-else="">••••••</t></td><td class="text-end text-muted"><t t-if="state.executive.what_changed.sales_yesterday!==null and state.executive.what_changed.sales_yesterday!==undefined">Yesterday: BDT <t t-esc="formatAmount(state.executive.what_changed.sales_yesterday)"/></t></td></tr>
+                <tr><td>Customer received</td><td class="text-end"><t t-if="state.executive.what_changed.received_today!==null and state.executive.what_changed.received_today!==undefined">BDT <t t-esc="formatAmount(state.executive.what_changed.received_today)"/></t><t t-else="">••••••</t></td><td class="text-end text-muted"><t t-if="state.executive.what_changed.received_yesterday!==null and state.executive.what_changed.received_yesterday!==undefined">Yesterday: BDT <t t-esc="formatAmount(state.executive.what_changed.received_yesterday)"/></t></td></tr>
+                <tr><td>Vendor paid</td><td class="text-end"><t t-if="state.executive.what_changed.paid_today!==null and state.executive.what_changed.paid_today!==undefined">BDT <t t-esc="formatAmount(state.executive.what_changed.paid_today)"/></t><t t-else="">••••••</t></td><td class="text-end text-muted"><t t-if="state.executive.what_changed.paid_yesterday!==null and state.executive.what_changed.paid_yesterday!==undefined">Yesterday: BDT <t t-esc="formatAmount(state.executive.what_changed.paid_yesterday)"/></t></td></tr>
+              </tbody></table></div>
+            </div>
+            <div class="eagle-card eagle-subcard">
+              <div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-shield"/>Control Links</h5></div>
+              <div class="d-flex flex-wrap gap-2 p-3">
+                <t t-if="state.executive.role!=='user'">
+                  <button class="ebtn ebtn-sm ebtn-outline" t-on-click="openExecutiveAudit"><i class="fa fa-history"/> Audit Trail</button>
+                  <button class="ebtn ebtn-sm ebtn-outline" t-on-click="openExecutiveAnomalies"><i class="fa fa-exclamation-triangle"/> Anomaly Review</button>
+                  <button class="ebtn ebtn-sm ebtn-outline" t-on-click="openExecutiveReorder"><i class="fa fa-cubes"/> Reorder Review</button>
+                </t>
+                <t t-else=""><span class="text-muted small">Management review links require Dashboard Manager access.</span></t>
+              </div>
+              <div class="eagle-stage-note">Server-side access controls remain in force for financial detail. The links open normal Odoo list views.</div>
+            </div>
+            <div class="eagle-card eagle-subcard">
+              <div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-database"/>Data Quality Breakdown</h5></div>
+              <div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Check</th><th class="text-end">Count</th></tr></thead><tbody><t t-foreach="state.executive.data_quality.checks||[]" t-as="q" t-key="q.label"><tr><td><t t-esc="q.label"/></td><td class="text-end"><t t-esc="q.count"/></td></tr></t></tbody></table></div>
+            </div>
+            <div class="eagle-card eagle-subcard">
+              <div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-history"/>Recent Dashboard Audit</h5></div>
+              <t t-if="state.executive.audit.length"><div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>User</th><th>Action</th><th>Reference</th><th>Date</th></tr></thead><tbody><t t-foreach="state.executive.audit" t-as="a" t-key="a.id"><tr><td><t t-esc="a.user"/></td><td><t t-esc="a.action"/></td><td><t t-esc="a.reference"/></td><td class="text-muted"><t t-esc="a.date"/></td></tr></t></tbody></table></div></t><t t-else=""><div class="eagle-collapsed-hint">No dashboard audit events recorded yet.</div></t>
+            </div>
+          </div>
+        </t>
+        <t t-else=""><div class="eagle-collapsed-hint"><i class="fa fa-eye-slash me-1"/>Executive Control Panel folded — click the chevron to review today's movements, exceptions, audit events and data quality.</div></t>
+      </div>
+    </t>
+
+    <!-- ══ STAGE 4 — ACTION CENTER ══ -->
+    <t t-if="vis('action_center')">
+      <div class="eagle-card eagle-stage-card eagle-action-center-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-bell-o"/>Action Center <span class="ebadge ebadge-red ms-1"><t t-esc="state.actionCenter.critical||0"/> critical</span></h4>
+          <div class="d-flex align-items-center gap-2">
+            <span class="text-muted small"><t t-esc="state.actionCenter.total_open||0"/> open item(s)</span>
+            <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleStage4('action_center')" t-att-aria-expanded="state.stage4Open.action_center" title="Show / hide action center"><i t-attf-class="fa #{state.stage4Open.action_center?'fa-chevron-up':'fa-chevron-down'}"/></button>
+          </div>
+        </div>
+        <t t-if="state.stage4Open.action_center">
+          <div class="eagle-action-grid">
+            <t t-foreach="actionCenterCards" t-as="c" t-key="c.key">
+              <button type="button" t-attf-class="eagle-action-tile severity-#{c.severity}" t-on-click="()=>this.openActionCenterCard(c)">
+                <span class="eagle-action-icon"><i t-attf-class="fa #{c.icon}"/></span>
+                <span class="eagle-action-copy"><strong><t t-esc="c.count"/></strong><span><t t-esc="c.label"/></span></span>
+                <span class="eagle-action-arrow"><i class="fa fa-external-link"/></span>
+              </button>
+            </t>
+          </div>
+          <div class="eagle-stage-note"><i class="fa fa-info-circle me-1"/>Action Center shows current open queues. It is not limited by the historical date filter; clicking an item opens Odoo's normal list view.</div>
+        </t>
+        <t t-else=""><div class="eagle-collapsed-hint"><i class="fa fa-eye-slash me-1"/>Action Center folded — click the chevron to review what needs attention.</div></t>
+      </div>
+    </t>
+
+    <!-- ══ STAGE 5 — MANAGEMENT CONTROL & INTELLIGENCE ══ -->
+    <t t-if="vis('ultimate_control')">
+      <div class="eagle-card eagle-stage-card eagle-ultimate-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-dashboard"/>Management Control &amp; Intelligence</h4>
+          <div class="d-flex align-items-center gap-2">
+            <span class="text-muted small">Server-side controls &amp; decision support</span>
+            <button class="ebtn ebtn-sm ebtn-outline" t-on-click="printManagementPack" title="Print management pack"><i class="fa fa-print"/></button>
+            <button class="ebtn ebtn-sm ebtn-outline" t-on-click="toggleUltimate" t-att-aria-expanded="state.ultimateOpen" title="Show / hide control center"><i t-attf-class="fa #{state.ultimateOpen?'fa-chevron-up':'fa-chevron-down'}"/></button>
+          </div>
+        </div>
+        <t t-if="state.ultimateOpen">
+          <div class="eagle-mini-kpi-grid">
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Sales Today</div><div class="eagle-mini-kpi-value">BDT <t t-esc="formatAmount(state.ultimate.today_change.sales_today)"/></div><div class="eagle-mini-kpi-sub"><t t-if="state.ultimate.today_change.sales_change_pct!==null and state.ultimate.today_change.sales_change_pct!==undefined"><t t-esc="state.ultimate.today_change.sales_change_pct"/>% vs yesterday</t><t t-else="">No prior-day base</t></div></div>
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Refunds / Returns</div><div class="eagle-mini-kpi-value">BDT <t t-esc="formatAmount(state.ultimate.returns.amount)"/></div><div class="eagle-mini-kpi-sub"><t t-esc="state.ultimate.returns.count||0"/> posted refund(s)</div></div>
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Reconciliation</div><div class="eagle-mini-kpi-value"><t t-esc="(state.ultimate.reconciliation.unreconciled_count||0)+(state.ultimate.reconciliation.in_process_count||0)"/></div><div class="eagle-mini-kpi-sub">items needing attention</div></div>
+            <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Data Quality</div><div class="eagle-mini-kpi-value"><t t-esc="(state.ultimate.data_quality.missing_product_barcode||0)+(state.ultimate.data_quality.missing_product_category||0)+(state.ultimate.data_quality.non_positive_sale_price||0)+(state.ultimate.data_quality.negative_stock_quants||0)+(state.ultimate.data_quality.customer_missing_email||0)"/></div><div class="eagle-mini-kpi-sub">data-quality flags</div></div>
+          </div>
+          <div class="eagle-ultimate-grid">
+            <div class="eagle-card eagle-subcard"><div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-user"/>Salesperson Performance</h5><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleUltimateTable('salespeople')"><i t-attf-class="fa #{state.ultimateTablesOpen.salespeople?'fa-chevron-up':'fa-chevron-down'}"/></button></div><t t-if="state.ultimateTablesOpen.salespeople"><div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Salesperson</th><th class="text-end">Orders</th><th class="text-end">Sales</th></tr></thead><tbody><t t-foreach="state.ultimate.salespeople||[]" t-as="s" t-key="s.id+'_'+s.name"><tr><td><t t-esc="s.name"/></td><td class="text-end"><t t-esc="s.orders"/></td><td class="text-end money"><t t-if="s.sales!==null and s.sales!==undefined">BDT <t t-esc="formatAmount(s.sales)"/></t><t t-else="">••••••</t></td></tr></t></tbody></table></div></t><t t-else=""><div class="eagle-collapsed-hint">Folded — click to show salesperson performance.</div></t></div>
+            <div class="eagle-card eagle-subcard"><div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-balance-scale"/>Margin Watch <span class="text-muted small">estimated</span></h5><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleUltimateTable('margin_watch')"><i t-attf-class="fa #{state.ultimateTablesOpen.margin_watch?'fa-chevron-up':'fa-chevron-down'}"/></button></div><t t-if="state.ultimateTablesOpen.margin_watch"><div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Order</th><th>Product</th><th class="text-end">Sales</th><th class="text-end">Profit</th><th class="text-end">Margin</th></tr></thead><tbody><t t-foreach="state.ultimate.margin_watch||[]" t-as="m" t-key="m.order_id+'_'+m.product_id"><tr><td><a class="link" href="#" t-on-click.prevent="()=>this.openUltimateOrder(m.order_id)"><t t-esc="m.order"/></a></td><td><a class="link" href="#" t-on-click.prevent="()=>this.openUltimateProduct(m.product_id)"><t t-esc="m.product"/></a></td><td class="text-end">BDT <t t-esc="formatAmount(m.sales)"/></td><td t-attf-class="text-end #{m.gross_profit&lt;0?'money-out':'money-in'}">BDT <t t-esc="formatAmount(m.gross_profit)"/></td><td t-attf-class="text-end fw-bold #{m.margin_pct!==null and m.margin_pct&lt;0?'money-out':''}"><t t-if="m.margin_pct!==null"><t t-esc="m.margin_pct"/>%</t><t t-else="">—</t></td></tr></t></tbody></table></div><div class="eagle-stage-note">Uses current product standard cost, so this is a management estimate rather than historical stock valuation.</div></t><t t-else=""><div class="eagle-collapsed-hint">Folded — click to review low or negative margin lines.</div></t></div>
+            <div class="eagle-card eagle-subcard"><div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-undo"/>Returns &amp; Refunds</h5><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleUltimateTable('returns')"><i t-attf-class="fa #{state.ultimateTablesOpen.returns?'fa-chevron-up':'fa-chevron-down'}"/></button></div><t t-if="state.ultimateTablesOpen.returns"><div class="eagle-two-stat-row"><div><span>Refund Amount</span><strong>BDT <t t-esc="formatAmount(state.ultimate.returns.amount)"/></strong></div><div><span>Refund Rate</span><strong><t t-if="state.ultimate.returns.rate_pct!==null and state.ultimate.returns.rate_pct!==undefined"><t t-esc="state.ultimate.returns.rate_pct"/>%</t><t t-else="">—</t></strong></div></div><div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Refund</th></tr></thead><tbody><t t-foreach="state.ultimate.returns.top_products||[]" t-as="r" t-key="r.product_id"><tr><td><a class="link" href="#" t-on-click.prevent="()=>this.openUltimateProduct(r.product_id)"><t t-esc="r.product"/></a></td><td class="text-end"><t t-esc="r.qty"/></td><td class="text-end money-out">BDT <t t-esc="formatAmount(r.amount)"/></td></tr></t></tbody></table></div></t><t t-else=""><div class="eagle-collapsed-hint">Folded — click to review posted refunds.</div></t></div>
+            <div class="eagle-card eagle-subcard"><div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-user-times"/>Customer Receivable Risk</h5><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleUltimateTable('customer_risk')"><i t-attf-class="fa #{state.ultimateTablesOpen.customer_risk?'fa-chevron-up':'fa-chevron-down'}"/></button></div><t t-if="state.ultimateTablesOpen.customer_risk"><div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Customer</th><th class="text-end">Overdue</th><th>Last Invoice</th></tr></thead><tbody><t t-foreach="state.ultimate.customer_risk||[]" t-as="c" t-key="c.id"><tr><td><a class="link" href="#" t-on-click.prevent="()=>this.openUltimatePartner(c.id)"><t t-esc="c.name"/></a></td><td class="text-end money-out">BDT <t t-esc="formatAmount(c.overdue)"/></td><td class="text-muted"><t t-esc="c.last_invoice"/></td></tr></t></tbody></table></div></t><t t-else=""><div class="eagle-collapsed-hint">Folded — click to review customers with overdue balances.</div></t></div>
+            <div class="eagle-card eagle-subcard"><div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-university"/>Reconciliation Center</h5><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleUltimateTable('reconciliation')"><i t-attf-class="fa #{state.ultimateTablesOpen.reconciliation?'fa-chevron-up':'fa-chevron-down'}"/></button></div><t t-if="state.ultimateTablesOpen.reconciliation"><div class="eagle-two-stat-row"><div><span>Unreconciled Lines</span><strong><t t-esc="state.ultimate.reconciliation.unreconciled_count||0"/> · BDT <t t-esc="formatAmount(state.ultimate.reconciliation.unreconciled_amount)"/></strong></div><div><span>In-Process Payments</span><strong><t t-esc="state.ultimate.reconciliation.in_process_count||0"/> · BDT <t t-esc="formatAmount(state.ultimate.reconciliation.in_process_amount)"/></strong></div></div><button class="ebtn ebtn-sm ebtn-outline" t-on-click="openUltimateReconciliation"><i class="fa fa-external-link"/> Open unreconciled lines</button></t><t t-else=""><div class="eagle-collapsed-hint">Folded — click to review reconciliation exceptions.</div></t></div>
+            <div class="eagle-card eagle-subcard"><div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-database"/>Data Quality</h5><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleUltimateTable('data_quality')"><i t-attf-class="fa #{state.ultimateTablesOpen.data_quality?'fa-chevron-up':'fa-chevron-down'}"/></button></div><t t-if="state.ultimateTablesOpen.data_quality"><div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Check</th><th class="text-end">Count</th></tr></thead><tbody><tr><td>Products without barcode</td><td class="text-end"><t t-esc="state.ultimate.data_quality.missing_product_barcode||0"/></td></tr><tr><td>Products without category</td><td class="text-end"><t t-esc="state.ultimate.data_quality.missing_product_category||0"/></td></tr><tr><td>Products with non-positive sale price</td><td class="text-end"><t t-esc="state.ultimate.data_quality.non_positive_sale_price||0"/></td></tr><tr><td>Negative stock quants</td><td class="text-end"><t t-esc="state.ultimate.data_quality.negative_stock_quants||0"/></td></tr><tr><td>Customers without email</td><td class="text-end"><t t-esc="state.ultimate.data_quality.customer_missing_email||0"/></td></tr></tbody></table></div></t><t t-else=""><div class="eagle-collapsed-hint">Folded — click to review data-quality checks.</div></t></div>
+            <div class="eagle-card eagle-subcard"><div class="eagle-card-header"><h5 class="eagle-card-title"><i class="fa fa-check-square-o"/>Approval Queue</h5><button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleUltimateTable('approvals')"><i t-attf-class="fa #{state.ultimateTablesOpen.approvals?'fa-chevron-up':'fa-chevron-down'}"/></button></div><t t-if="state.ultimateTablesOpen.approvals"><div class="eagle-table-wrap"><table class="eagle-table"><thead><tr><th>Type</th><th>Reference</th><th>Partner</th><th class="text-end">Amount</th></tr></thead><tbody><t t-foreach="state.ultimate.approval_queue.sales||[]" t-as="a" t-key="'s_'+a.id"><tr><td>Sale</td><td><a class="link" href="#" t-on-click.prevent="()=>this.openUltimateOrder(a.id)"><t t-esc="a.name"/></a></td><td><t t-esc="a.partner"/></td><td class="text-end money">BDT <t t-esc="formatAmount(a.amount)"/></td></tr></t><t t-foreach="state.ultimate.approval_queue.purchases||[]" t-as="a" t-key="'p_'+a.id"><tr><td>Purchase</td><td><t t-esc="a.name"/></td><td><t t-esc="a.partner"/></td><td class="text-end money">BDT <t t-esc="formatAmount(a.amount)"/></td></tr></t></tbody></table></div></t><t t-else=""><div class="eagle-collapsed-hint">Folded — click to review threshold-based approvals.</div></t></div>
+          </div>
+          <div class="eagle-stage-note"><i class="fa fa-shield me-1"/>Sensitive financial detail is delivered according to the server-side dashboard role. Regular users receive operational counts, not hidden monetary payloads.</div>
+        </t>
+        <t t-else=""><div class="eagle-collapsed-hint">Management Control Center folded — click to review advanced controls, risks and data quality.</div></t>
+      </div>
+    </t>
+
     <!-- ══ INSIGHTS ACCORDION ══ -->
     <div class="eagle-two-col">
 
-      <!-- Sales Trend Chart -->
+      <!-- Sales Trend Graph -->
       <t t-if="vis('chart')">
-        <div class="eagle-card">
-          <div class="eagle-card-header">
-            <h4 class="eagle-card-title"><i class="fa fa-bar-chart"/>Sales Trend</h4>
+        <div class="eagle-card eagle-sales-trend-card">
+          <div class="eagle-card-header eagle-sales-trend-header">
+            <h4 class="eagle-card-title"><i class="fa fa-line-chart"/>Sales Trend</h4>
+            <div class="eagle-trend-controls" role="tablist" aria-label="Sales trend time scale">
+              <span class="eagle-trend-label">View by</span>
+              <t t-foreach="trendPeriods" t-as="period" t-key="period.key">
+                <button type="button" class="eagle-period-btn" t-attf-class="eagle-period-btn #{state.trendGranularity===period.key?'active':''}" t-att-aria-pressed="state.trendGranularity===period.key ? 'true' : 'false'" t-on-click="()=>this.setTrendGranularity(period.key)"><t t-esc="period.label"/></button>
+              </t>
+            </div>
           </div>
-          <div class="eagle-chart-wrap">
+          <div class="eagle-trend-summary">
+            <span><strong><t t-esc="trendSummary.points"/></strong> periods</span>
+            <span>Total sales <strong>BDT <t t-esc="formatTrendCompact(trendSummary.total)"/></strong></span>
+          </div>
+          <div class="eagle-chart-wrap eagle-line-chart-wrap">
             <t t-if="state.trend_data.length === 0">
-              <p class="text-muted small text-center py-3">No sales data for this period.</p>
+              <p class="text-muted small text-center py-4">No sales data for this period.</p>
             </t>
             <t t-if="state.trend_data.length > 0">
-              <t t-foreach="state.trend_data" t-as="d" t-key="d.date">
-                <div class="eagle-bar-row">
-                  <div class="eagle-bar-name"><t t-esc="d.date.slice(5)"/></div>
-                  <div class="eagle-bar-track"><div class="eagle-bar-fill" t-att-style="'width:'+Math.round(d.amount/trendMax*100)+'%'"><t t-esc="d.amount.toFixed(0)"/></div></div>
-                </div>
-              </t>
+              <div class="eagle-line-chart-scroll">
+                <svg class="eagle-sales-line-chart" viewBox="0 0 820 300" role="img" aria-label="Sales trend graph">
+                  <t t-foreach="trendYTicks" t-as="tick" t-key="tick.key">
+                    <line class="eagle-chart-grid" t-att-x1="trendPlotLeft" t-att-x2="trendPlotLeft + trendPlotWidth" t-att-y1="tick.y" t-att-y2="tick.y"/>
+                    <text class="eagle-chart-y-label" t-att-x="trendPlotLeft - 10" t-att-y="tick.y + 4" text-anchor="end"><t t-esc="formatTrendCompact(tick.value)"/></text>
+                  </t>
+                  <line class="eagle-chart-axis" t-att-x1="trendPlotLeft" t-att-x2="trendPlotLeft + trendPlotWidth" t-att-y1="trendPlotTop + trendPlotHeight" t-att-y2="trendPlotTop + trendPlotHeight"/>
+                  <polygon class="eagle-chart-area" t-att-points="trendAreaPoints"/>
+                  <polyline class="eagle-chart-line" t-att-points="trendPolyline" fill="none"/>
+                  <t t-foreach="trendChartPoints" t-as="point" t-key="point.key">
+                    <circle class="eagle-chart-point" t-att-cx="point.x" t-att-cy="point.y" r="4">
+                      <title><t t-esc="point.fullLabel"/> — BDT <t t-esc="formatAmount(point.amount)"/></title>
+                    </circle>
+                    <t t-if="shouldShowTrendXLabel(point_index)">
+                      <text class="eagle-chart-x-label" t-att-x="point.x" t-att-y="trendChartHeight - 14" text-anchor="middle"><t t-esc="point.label"/></text>
+                    </t>
+                  </t>
+                </svg>
+              </div>
             </t>
           </div>
         </div>
@@ -716,13 +946,153 @@
       </div>
     </t>
 
+    <!-- ══ STAGE 2 — MANAGEMENT ANALYTICS ══ -->
+    <t t-if="vis('sales_performance')">
+      <div class="eagle-card eagle-stage-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-line-chart"/>Sales Performance</h4>
+          <span class="text-muted small">Selected period</span>
+        </div>
+        <div class="eagle-mini-kpi-grid">
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Sales</div><div class="eagle-mini-kpi-value">BDT <t t-esc="(state.management.sales_performance.sales||0).toFixed(2)"/></div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Orders</div><div class="eagle-mini-kpi-value"><t t-esc="state.management.sales_performance.orders||0"/></div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Average Order</div><div class="eagle-mini-kpi-value">BDT <t t-esc="(state.management.sales_performance.aov||0).toFixed(2)"/></div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Estimated Gross Profit</div><div class="eagle-mini-kpi-value"><t t-if="state.management.sales_performance.can_view_profit">BDT <t t-esc="(state.management.sales_performance.estimated_gross_profit||0).toFixed(2)"/></t><t t-else="">—</t></div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Estimated Margin</div><div class="eagle-mini-kpi-value"><t t-if="state.management.sales_performance.can_view_profit"><t t-esc="(state.management.sales_performance.estimated_margin_pct||0).toFixed(1)"/>%</t><t t-else="">—</t></div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">vs Previous</div><div class="eagle-mini-kpi-value"><t t-if="state.management.sales_performance.vs_previous_pct!==null and state.management.sales_performance.vs_previous_pct!==undefined"><t t-esc="state.management.sales_performance.vs_previous_pct.toFixed(1)"/>%</t><t t-else="">—</t></div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">vs Last Year</div><div class="eagle-mini-kpi-value"><t t-if="state.management.sales_performance.vs_last_year_pct!==null and state.management.sales_performance.vs_last_year_pct!==undefined"><t t-esc="state.management.sales_performance.vs_last_year_pct.toFixed(1)"/>%</t><t t-else="">—</t></div></div>
+        </div>
+        <div class="eagle-stage-note"><i class="fa fa-info-circle me-1"/>Estimated Gross Profit / Margin uses posted customer invoices and the current product standard cost; it is an operational estimate, not an accounting valuation.</div>
+      </div>
+    </t>
+
+    <t t-if="vis('product_profitability')">
+      <div class="eagle-card eagle-stage-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-usd"/>Product Profitability</h4>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleStageTable('product_profitability')" t-att-aria-expanded="state.stageTablesOpen.product_profitability" title="Show / hide table"><i t-attf-class="fa #{state.stageTablesOpen.product_profitability?'fa-chevron-up':'fa-chevron-down'}"/></button>
+        </div>
+        <t t-if="state.stageTablesOpen.product_profitability">
+          <div class="eagle-stage-note">Top products by estimated gross profit for the selected period. Cost is based on the current standard cost.</div>
+          <div class="eagle-table-wrap"><table class="eagle-table">
+            <thead><tr><th>Product</th><th class="text-end">Qty Sold</th><th class="text-end">Sales</th><th class="text-end">Estimated Cost</th><th class="text-end">Gross Profit</th><th class="text-end">Margin</th></tr></thead>
+            <tbody>
+              <t t-if="state.management.product_profitability.length===0"><tr><td colspan="6" class="text-center text-muted py-4">No profitability data for this period.</td></tr></t>
+              <t t-foreach="state.management.product_profitability" t-as="p" t-key="p.product_id"><tr>
+                <td><a class="link" href="#" t-on-click.prevent="()=>this.openManagementProduct(p.product_id)"><t t-esc="p.product"/></a></td>
+                <td class="text-end"><t t-esc="p.qty_sold.toFixed(2)"/></td>
+                <td class="text-end money">BDT <t t-esc="p.sales.toFixed(2)"/></td>
+                <td class="text-end money-out">BDT <t t-esc="p.estimated_cost.toFixed(2)"/></td>
+                <td t-attf-class="text-end fw-bold #{p.gross_profit>=0?'money-in':'money-out'}">BDT <t t-esc="p.gross_profit.toFixed(2)"/></td>
+                <td class="text-end"><t t-esc="p.margin_pct.toFixed(1)"/>%</td>
+              </tr></t>
+            </tbody>
+          </table></div>
+        </t>
+        <t t-else=""><div class="eagle-collapsed-hint"><i class="fa fa-eye-slash me-1"/>Table folded — click the chevron to show it.</div></t>
+      </div>
+    </t>
+
+    <t t-if="vis('inventory_risk')">
+      <div class="eagle-card eagle-stage-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-cubes"/>Inventory Risk</h4>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleStageTable('inventory_risk')" t-att-aria-expanded="state.stageTablesOpen.inventory_risk" title="Show / hide table"><i t-attf-class="fa #{state.stageTablesOpen.inventory_risk?'fa-chevron-up':'fa-chevron-down'}"/></button>
+        </div>
+        <t t-if="state.stageTablesOpen.inventory_risk">
+          <div class="eagle-stage-note"><i class="fa fa-clock-o me-1"/>Days cover uses the last 30 days of posted customer-invoice quantities. Risk is based on current on-hand quantity.</div>
+          <div class="eagle-table-wrap"><table class="eagle-table">
+            <thead><tr><th>Product</th><th class="text-end">On Hand</th><th class="text-end">Sold 30d</th><th class="text-end">Days Cover</th><th>Status</th></tr></thead>
+            <tbody>
+              <t t-if="state.management.inventory_risk.length===0"><tr><td colspan="5" class="text-center text-muted py-4">No inventory-risk records found.</td></tr></t>
+              <t t-foreach="state.management.inventory_risk" t-as="p" t-key="p.product_id"><tr>
+                <td><a class="link" href="#" t-on-click.prevent="()=>this.openManagementProduct(p.product_id)"><t t-esc="p.product"/></a></td>
+                <td class="text-end"><t t-esc="p.qty_on_hand.toFixed(2)"/> <span class="text-muted"><t t-esc="p.uom"/></span></td>
+                <td class="text-end"><t t-esc="p.sold_30d.toFixed(2)"/></td>
+                <td class="text-end"><t t-if="p.days_cover!==null and p.days_cover!==undefined"><t t-esc="p.days_cover.toFixed(1)"/></t><t t-else="">—</t></td>
+                <td><span t-attf-class="ebadge #{p.status==='out_of_stock'?'ebadge-red':p.status==='critical'?'ebadge-red':p.status==='low'?'ebadge-yellow':p.status==='dead_stock_90d'?'ebadge-purple':p.status==='no_sales_30d'?'ebadge-gray':'ebadge-green'}"><t t-esc="p.status.replaceAll('_',' ')"/></span></td>
+              </tr></t>
+            </tbody>
+          </table></div>
+        </t>
+        <t t-else=""><div class="eagle-collapsed-hint"><i class="fa fa-eye-slash me-1"/>Table folded — click the chevron to show it.</div></t>
+      </div>
+    </t>
+
+    <!-- ══ STAGE 3 — WAREHOUSE COMPARISON ══ -->
+    <t t-if="vis('warehouse_comparison')">
+      <div class="eagle-card eagle-stage-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-building-o"/>Store / Warehouse Comparison</h4>
+          <span class="text-muted small">Selected period + current stock value</span>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleStageTable('warehouse_comparison')" t-att-aria-expanded="state.stageTablesOpen.warehouse_comparison" title="Show / hide table"><i t-attf-class="fa #{state.stageTablesOpen.warehouse_comparison?'fa-chevron-up':'fa-chevron-down'}"/></button>
+        </div>
+        <t t-if="state.stageTablesOpen.warehouse_comparison">
+          <div class="eagle-table-wrap"><table class="eagle-table">
+            <thead><tr><th>Store / Warehouse</th><th class="text-end">Orders</th><th class="text-end">Sales</th><th class="text-end">Purchases</th><th class="text-end">Sales − Purchases</th><th class="text-end">Stock Value</th></tr></thead>
+            <tbody>
+              <t t-if="state.warehouseComparison.length===0"><tr><td colspan="6" class="text-center text-muted py-4">No warehouse data available.</td></tr></t>
+              <t t-foreach="state.warehouseComparison" t-as="w" t-key="w.warehouse_id"><tr>
+                <td class="fw-semibold"><t t-esc="w.warehouse"/></td>
+                <td class="text-end"><t t-esc="w.orders"/></td>
+                <td class="text-end money">BDT <t t-esc="w.sales.toFixed(2)"/></td>
+                <td class="text-end money-out">BDT <t t-esc="w.purchases.toFixed(2)"/></td>
+                <td t-attf-class="text-end fw-bold #{w.sales_minus_purchases>=0?'money-in':'money-out'}">BDT <t t-esc="w.sales_minus_purchases.toFixed(2)"/></td>
+                <td class="text-end money">BDT <t t-esc="w.stock_value.toFixed(2)"/></td>
+              </tr></t>
+            </tbody>
+          </table></div>
+        </t>
+        <t t-else=""><div class="eagle-collapsed-hint"><i class="fa fa-eye-slash me-1"/>Table folded — click the chevron to show it.</div></t>
+      </div>
+    </t>
+
+    <!-- ══ STAGE 3 — DAILY CLOSING ══ -->
+    <t t-if="vis('daily_closing')">
+      <div class="eagle-card eagle-stage-card">
+        <div class="eagle-card-header">
+          <h4 class="eagle-card-title"><i class="fa fa-calendar-check-o"/>Daily Closing</h4>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="date" class="form-control form-control-sm" t-att-value="state.dailyClosingDate" t-on-change="onDailyClosingDateChange"/>
+            <button class="ebtn ebtn-sm ebtn-outline" t-on-click="printDailyClosing" title="Print daily closing"><i class="fa fa-print"/> Print</button>
+          </div>
+        </div>
+        <div class="eagle-mini-kpi-grid">
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Sales</div><div class="eagle-mini-kpi-value">BDT <t t-esc="(state.dailyClosing.sales_amount||0).toFixed(2)"/></div><div class="eagle-mini-kpi-sub"><t t-esc="state.dailyClosing.sales_orders||0"/> order(s)</div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Customer Received</div><div class="eagle-mini-kpi-value">BDT <t t-esc="(state.dailyClosing.customer_received||0).toFixed(2)"/></div><div class="eagle-mini-kpi-sub"><t t-esc="state.dailyClosing.customer_payments||0"/> payment(s)</div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Vendor Paid</div><div class="eagle-mini-kpi-value">BDT <t t-esc="(state.dailyClosing.vendor_paid||0).toFixed(2)"/></div><div class="eagle-mini-kpi-sub"><t t-esc="state.dailyClosing.vendor_payments||0"/> payment(s)</div></div>
+          <div class="eagle-mini-kpi"><div class="eagle-mini-kpi-label">Net Cash Movement</div><div class="eagle-mini-kpi-value" t-attf-class="eagle-mini-kpi-value #{(state.dailyClosing.net_cash_movement||0)>=0?'money-in':'money-out'}">BDT <t t-esc="(state.dailyClosing.net_cash_movement||0).toFixed(2)"/></div></div>
+        </div>
+        <div class="eagle-daily-close-grid">
+          <div><span class="label">Customer Invoices</span><b><t t-esc="state.dailyClosing.customer_invoices||0"/></b><span> · BDT <t t-esc="(state.dailyClosing.customer_invoice_amount||0).toFixed(2)"/></span></div>
+          <div><span class="label">Vendor Bills</span><b><t t-esc="state.dailyClosing.vendor_bills||0"/></b><span> · BDT <t t-esc="(state.dailyClosing.vendor_bill_amount||0).toFixed(2)"/></span></div>
+          <div><span class="label">Deliveries Done</span><b><t t-esc="state.dailyClosing.deliveries_done||0"/></b></div>
+          <div><span class="label">Receipts Done</span><b><t t-esc="state.dailyClosing.receipts_done||0"/></b></div>
+          <div><span class="label">Internal Transfers</span><b><t t-esc="state.dailyClosing.internal_transfers_done||0"/></b></div>
+          <div><span class="label">Draft Payments</span><b><t t-esc="state.dailyClosing.draft_payments||0"/></b></div>
+          <div><span class="label">Pending Deliveries</span><b><t t-esc="state.dailyClosing.pending_deliveries||0"/></b></div>
+          <div><span class="label">Pending Receipts</span><b><t t-esc="state.dailyClosing.pending_receipts||0"/></b></div>
+        </div>
+        <div class="d-flex align-items-center justify-content-between mt-3">
+          <span class="text-muted small">Journal movement is subject to the same ledger balance masking rules as Finance Dashboard.</span>
+          <button class="ebtn ebtn-sm ebtn-outline" t-on-click="()=>this.toggleStageTable('daily_journal_moves')" t-att-aria-expanded="state.stageTablesOpen.daily_journal_moves"><i t-attf-class="fa #{state.stageTablesOpen.daily_journal_moves?'fa-chevron-up':'fa-chevron-down'}"/> Journal Movement</button>
+        </div>
+        <t t-if="state.stageTablesOpen.daily_journal_moves">
+          <div class="eagle-table-wrap mt-2"><table class="eagle-table">
+            <thead><tr><th>Journal</th><th class="text-end">Previous</th><th class="text-end">Deposit</th><th class="text-end">Withdraw</th><th class="text-end">Change</th><th class="text-end">New Balance</th></tr></thead>
+            <tbody><t t-foreach="state.dailyClosing.journal_moves||[]" t-as="j" t-key="j.journal_id"><tr><td class="fw-semibold"><t t-esc="j.journal_name"/></td><td class="text-end"><t t-if="j.balance_masked">••••••</t><t t-else=""><t t-esc="(j.opening||0).toFixed(2)"/></t></td><td class="text-end money-in"><t t-esc="j.deposit.toFixed(2)"/></td><td class="text-end money-out"><t t-esc="j.withdraw.toFixed(2)"/></td><td t-attf-class="text-end fw-bold #{j.change>=0?'money-in':'money-out'}"><t t-if="j.change>=0">+</t><t t-esc="j.change.toFixed(2)"/></td><td class="text-end fw-bold" style="color:#1d4ed8"><t t-if="j.balance_masked">••••••</t><t t-else=""><t t-esc="(j.closing||0).toFixed(2)"/></t></td></tr></t></tbody>
+          </table></div>
+        </t>
+      </div>
+    </t>
+
     <!-- ══ CUSTOMER INTELLIGENCE ══ -->
     <t t-if="vis('customers')">
       <div class="eagle-two-col">
         <div class="eagle-card">
           <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-users"/>New vs Returning Customers</h4></div>
           <div class="eagle-donut-wrap">
-            <t t-set="newPct" t-value="state.customers.total ? Math.round(state.customers.new/state.customers.total*100) : 0"/>
+            <t t-set="newPct" t-value="state.customers.total ? roundPercent(state.customers.new,state.customers.total) : 0"/>
             <t t-set="retPct" t-value="100 - newPct"/>
             <svg class="eagle-donut-svg" viewBox="0 0 42 42">
               <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#e5e7eb" stroke-width="5"/>

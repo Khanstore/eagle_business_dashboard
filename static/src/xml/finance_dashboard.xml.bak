@@ -132,7 +132,7 @@
             <t t-foreach="['admin','manager','user']" t-as="role" t-key="role">
               <div class="eagle-settings-group">
                 <div class="eagle-settings-group-title"><i t-attf-class="fa #{role==='admin'?'fa-star':role==='manager'?'fa-briefcase':'fa-user'} me-1"/><t t-esc="role.charAt(0).toUpperCase()+role.slice(1)"/></div>
-                <t t-foreach="getSectionLabelEntries()" t-as="entry" t-key="entry[0]">
+                <t t-foreach="Object.entries(state.section_labels)" t-as="entry" t-key="entry[0]">
                   <div class="eagle-settings-item">
                     <span><t t-esc="entry[1]"/></span>
                     <div class="form-check form-switch mb-0">
@@ -152,17 +152,15 @@
           <hr class="my-3"/>
           <p class="fw-semibold mb-1"><i class="fa fa-lock me-1"/>Ledger Balance Security</p>
           <p class="text-muted small mb-2">Enable masking per bank/cash journal. Unauthorized users receive no Previous or New Balance amount from the server. Change remains visible for transfer checking. Dashboard Admins and approved users see actual balances.</p>
-          <div class="alert alert-info py-2 px-3 mt-2 mb-2"><i class="fa fa-user me-1"/>Security is evaluated for the Odoo user making the dashboard/report request. Administrator status grants configuration access only; it does not bypass a masked journal. A user must be explicitly listed as an Approved User to see that journal balance.</div>
-          <t t-if="state.ledgerSecurityJournals.length"><div class="alert alert-secondary py-2 px-3 mt-2 mb-2"><i class="fa fa-user-circle me-1"/>Testing as: <strong><t t-esc="state.ledgerSecurityCurrentUserName || 'Current User'"/></strong>. To test masking, do not approve this user for the selected journal.</div></t>
+          <div class="alert alert-info py-2 px-3 mt-2 mb-2"><i class="fa fa-user me-1"/>Security is evaluated for the Odoo user making the dashboard/report request. Administrators can configure the rule; non-admin users see protected balances only when explicitly listed as approved users.</div>
           <t t-if="state.ledgerSecurityJournals.length===0"><div class="text-muted small py-2">No bank/cash journals available.</div></t>
           <div t-if="state.ledgerSecurityJournals.length" class="eagle-ledger-security-list">
             <t t-foreach="state.ledgerSecurityJournals" t-as="lj" t-key="lj.id">
               <div class="eagle-ledger-security-row">
                 <div class="eagle-ledger-security-journal">
-                  <div class="fw-semibold"><t t-esc="lj.name"/> <span t-if="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].masked" class="ebadge ebadge-yellow ms-1"><i class="fa fa-lock me-1"/>Protected rule</span></div>
-                  <div class="small mt-1"><span t-if="lj.current_user_approved" class="ebadge ebadge-green"><i class="fa fa-check me-1"/>Current user approved</span><span t-else="" t-if="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].masked" class="ebadge ebadge-red"><i class="fa fa-eye-slash me-1"/>Current user masked</span></div>
+                  <div class="fw-semibold"><t t-esc="lj.name"/></div>
                   <label class="form-check form-switch mb-0 small text-muted">
-                    <input class="form-check-input" type="checkbox" t-att-checked="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].masked ? true : undefined" t-on-change="(ev)=>this.toggleLedgerMask(lj.id,ev)"/>
+                    <input class="form-check-input" type="checkbox" t-att-checked="state.ledgerSecurityDraft[String(lj.id)] &amp;&amp; state.ledgerSecurityDraft[String(lj.id)].masked ? true : undefined" t-on-change="(ev)=>this.toggleLedgerMask(lj.id,ev)"/>
                     <span class="ms-1">Mask balances</span>
                   </label>
                 </div>
@@ -172,7 +170,7 @@
                     <t t-foreach="state.ledgerSecurityUsers" t-as="usr" t-key="usr.id">
                       <label class="eagle-ledger-security-user-option">
                         <input type="checkbox"
-                               t-att-checked="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].approved_user_ids.includes(usr.id)"
+                               t-att-checked="state.ledgerSecurityDraft[String(lj.id)] &amp;&amp; state.ledgerSecurityDraft[String(lj.id)].approved_user_ids.includes(usr.id)"
                                t-on-change="(ev)=>this.toggleLedgerApproval(lj.id,usr.id,ev)"/>
                         <span><t t-esc="usr.name"/></span>
                       </label>
@@ -233,7 +231,7 @@
       <div class="eagle-kpi-grid">
         <div t-attf-class="eagle-kpi-card kpi-teal #{state.cash_balance_masked?'':'clickable'}" t-on-click="openCashBalance">
           <div class="eagle-kpi-icon"><i class="fa fa-bank"/></div>
-          <div><div class="eagle-kpi-val" style="font-size:1.1rem"><t t-if="state.cash_balance_fully_masked">••••••</t><t t-else=""><span t-attf-class="#{currentCashPositive?'':'text-danger'}"><t t-esc="state.current_cash.toFixed(0)"/></span><span t-if="state.cash_balance_partial_masked" title="Some protected ledger values are excluded">*</span></t></div><div class="eagle-kpi-lbl">Cash Balance <i t-if="!state.cash_balance_masked" class="fa fa-external-link" style="font-size:10px"/></div><div class="eagle-kpi-sub"><t t-if="state.cash_balance_fully_masked">Protected by ledger security</t><t t-elif="state.cash_balance_partial_masked">Some protected ledgers excluded</t><t t-else="">BDT this month</t></div></div>
+          <div><div t-attf-class="eagle-kpi-val #{currentCashPositive?'':'text-danger'}" style="font-size:1.1rem"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.current_cash.toFixed(0)"/></t></div><div class="eagle-kpi-lbl">Cash Balance <i t-if="!state.cash_balance_masked" class="fa fa-external-link" style="font-size:10px"/></div><div class="eagle-kpi-sub"><t t-if="state.cash_balance_masked">Protected by ledger security</t><t t-else="">BDT this month</t></div></div>
         </div>
         <div class="eagle-kpi-card kpi-red clickable" t-on-click="openOverdueInvoices">
           <div class="eagle-kpi-icon"><i class="fa fa-exclamation-triangle"/></div>
@@ -256,12 +254,11 @@
         <div class="eagle-card">
           <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-money"/>Cash Flow (This Month)</h4></div>
           <div class="eagle-cashflow" style="border-radius:0;box-shadow:none;margin-bottom:0">
-            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Opening</div><div class="eagle-cf-val" style="color:#374151"><t t-if="state.cash_balance_fully_masked">••••••</t><t t-else=""><t t-esc="state.opening_cash.toFixed(2)"/><t t-if="state.cash_balance_partial_masked">*</t></t></div></div>
-            <div class="eagle-cf-item"><div class="eagle-cf-lbl">In</div><div class="eagle-cf-val" style="color:#059669">+<t t-esc="state.month_in.toFixed(2)"/></div></div>
-            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Out</div><div class="eagle-cf-val" style="color:#dc2626">-<t t-esc="state.month_out.toFixed(2)"/></div></div>
-            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Balance</div><div class="eagle-cf-val" style="font-size:1.1rem;font-weight:900"><t t-if="state.cash_balance_fully_masked">••••••</t><t t-else=""><span t-attf-class="#{currentCashPositive?'':'text-danger'}"><t t-esc="state.current_cash.toFixed(2)"/></span><t t-if="state.cash_balance_partial_masked">*</t></t></div></div>
+            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Opening</div><div class="eagle-cf-val" style="color:#374151"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.opening_cash.toFixed(2)"/></t></div></div>
+            <div class="eagle-cf-item"><div class="eagle-cf-lbl">In</div><div class="eagle-cf-val" style="color:#059669"><t t-if="state.cash_balance_masked">••••••</t><t t-else="">+<t t-esc="state.month_in.toFixed(2)"/></t></div></div>
+            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Out</div><div class="eagle-cf-val" style="color:#dc2626"><t t-if="state.cash_balance_masked">••••••</t><t t-else="">-<t t-esc="state.month_out.toFixed(2)"/></t></div></div>
+            <div class="eagle-cf-item"><div class="eagle-cf-lbl">Balance</div><div t-attf-class="eagle-cf-val #{currentCashPositive?'':'text-danger'}" style="font-size:1.1rem;font-weight:900"><t t-if="state.cash_balance_masked">••••••</t><t t-else=""><t t-esc="state.current_cash.toFixed(2)"/></t></div></div>
           </div>
-          <div class="text-muted small px-3 py-2 border-top"><i class="fa fa-info-circle me-1"/><strong>* Some values are excluded.</strong> Opening and Balance show only the visible ledgers when protected ledgers contribute to the aggregate. In and Out remain visible for transfer checking. When all contributing ledgers are protected, the balance is fully masked.</div>
         </div>
         <div class="eagle-card">
           <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-calculator"/>P &amp; L Summary (This Month)</h4></div>

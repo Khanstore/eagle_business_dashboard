@@ -1,6 +1,7 @@
 /** @odoo-module **/
 import { registry } from "@web/core/registry";
-import { Component, onWillStart, onMounted, onWillDestroy, useState } from "@odoo/owl";
+import { Component, onWillStart, onMounted, onWillDestroy, onPatched, useState } from "@odoo/owl";
+import { enhanceEagleTables } from "./table_tools";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
 
@@ -49,6 +50,10 @@ class OperationsDashboard extends Component {
             window.addEventListener('keydown', this._keydownHandler);
             this.heartbeatNow();
             this._heartbeatTimer = setInterval(() => this.heartbeatNow(), 30000);
+            enhanceEagleTables(this.el, 'operations');
+        });
+        onPatched(() => {
+            enhanceEagleTables(this.el, 'operations');
         });
         onWillDestroy(() => {
             if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);

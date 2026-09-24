@@ -1207,55 +1207,31 @@ class DashboardData(models.AbstractModel):
 
     # ─── Trend Chart Data ─────────────────────────────────────────────────────
     @api.model
-    def get_trend_data(self, from_date=False, to_date=False, model='sale', granularity='day'):
-        """Return sales/invoice trend grouped by a selectable time bucket.
-
-        granularity: day, week, month, quarter, year. The old three-argument
-        call remains supported and defaults to day.
-        """
-        allowed = {'day', 'week', 'month', 'quarter', 'year'}
-        granularity = granularity if granularity in allowed else 'day'
-
+    def get_trend_data(self, from_date=False, to_date=False, model='sale'):
         if not from_date:
             today = fields.Date.today()
             from_date = str(today.replace(day=1))
             to_date = str(today)
 
         if model == 'sale':
-            date_field = 'date_order'
-            table = 'sale_order'
-            where = "state IN ('sale','done')"
+            self.env.cr.execute("""
+                SELECT DATE(date_order) as d, COALESCE(SUM(amount_total),0)
+                FROM sale_order
+                WHERE state IN ('sale','done')
+                  AND DATE(date_order) >= %s AND DATE(date_order) <= %s
+                GROUP BY d ORDER BY d
+            """, (from_date, to_date))
         else:
-            date_field = 'invoice_date'
-            table = 'account_move'
-            where = "move_type='out_invoice' AND state='posted'"
-
-        # DATE_TRUNC gives stable bucket starts for the graph axis.
-        bucket_sql = {
-            'day': f'DATE({date_field})',
-            'week': f"DATE_TRUNC('week', {date_field})::date",
-            'month': f"DATE_TRUNC('month', {date_field})::date",
-            'quarter': f"DATE_TRUNC('quarter', {date_field})::date",
-            'year': f"DATE_TRUNC('year', {date_field})::date",
-        }[granularity]
-
-        self.env.cr.execute(f"""
-            SELECT {bucket_sql} AS bucket, COALESCE(SUM(amount_total),0)
-            FROM {table}
-            WHERE {where}
-              AND {date_field} IS NOT NULL
-              AND DATE({date_field}) >= %s
-              AND DATE({date_field}) <= %s
-            GROUP BY bucket
-            ORDER BY bucket
-        """, (from_date, to_date))
+            self.env.cr.execute("""
+                SELECT invoice_date as d, COALESCE(SUM(amount_total),0)
+                FROM account_move
+                WHERE move_type='out_invoice' AND state='posted'
+                  AND invoice_date >= %s AND invoice_date <= %s
+                GROUP BY d ORDER BY d
+            """, (from_date, to_date))
 
         rows = self.env.cr.fetchall()
-        return [{
-            'date': str(r[0]),
-            'amount': round(float(r[1]), 2),
-            'granularity': granularity,
-        } for r in rows]
+        return [{'date': str(r[0]), 'amount': round(float(r[1]), 2)} for r in rows]
 
     # ─── Aging Report ────────────────────────────────────────────────────────
     @api.model
@@ -1500,63 +1476,16 @@ class DashboardData(models.AbstractModel):
 
         journals = self.env['account.journal'].search([('type', 'in', ['bank', 'cash'])])
         security = self._ledger_security_rules_for_journals(journals)
-
-        # Ledger Balance Security is applied per contributing journal.  For the
-        # aggregate Cash Flow card we disclose only the balance portion belonging
-        # to journals the current user may view.  Movement totals (In/Out) remain
-        # aggregated across all bank/cash journals so they remain useful for
-        # transfer checking.  Hidden journal amounts never leave the server.
-        cash_balance_masked = False
-        visible_journal_count = 0
-        contributing_journal_count = 0
-        opening_cash = 0.0
-        month_in = 0.0
-        month_out = 0.0
-        current_cash = 0.0
-
-        for journal in journals.filtered(lambda j: j.default_account_id):
-            contributing_journal_count += 1
-            account_id = int(journal.default_account_id.id)
-            journal_security = security.get(journal.id, {})
-            journal_masked = bool(journal_security.get('masked'))
-            cash_balance_masked = cash_balance_masked or journal_masked
-
-            # Restrict the balance calculation to the journal's own ledger and
-            # default account. This preserves the journal-level security boundary
-            # and avoids mixing values between journals.
-            self.env.cr.execute(
-                "SELECT "
-                "COALESCE(SUM(aml.debit-aml.credit) FILTER (WHERE am.date<%s),0),"
-                "COALESCE(SUM(aml.debit) FILTER (WHERE am.date>=%s),0),"
-                "COALESCE(SUM(aml.credit) FILTER (WHERE am.date>=%s),0) "
-                "FROM account_move_line aml "
-                "JOIN account_move am ON am.id=aml.move_id "
-                "WHERE aml.journal_id=%s AND aml.account_id=%s AND am.state='posted'",
-                (str(fom), str(fom), str(fom), int(journal.id), account_id),
-            )
-            row = self.env.cr.fetchone()
-            journal_opening = float(row[0] or 0)
-            journal_in = float(row[1] or 0)
-            journal_out = float(row[2] or 0)
-            journal_current = journal_opening + journal_in - journal_out
-
-            # Movement totals intentionally remain visible, including for
-            # protected journals. Only Opening/Balance are security-filtered.
-            month_in += journal_in
-            month_out += journal_out
-
-            if not journal_masked:
-                visible_journal_count += 1
-                opening_cash += journal_opening
-                current_cash += journal_current
-
-        cash_balance_partial_masked = bool(
-            cash_balance_masked and visible_journal_count and
-            visible_journal_count < contributing_journal_count
-        )
-        cash_balance_fully_masked = bool(
-            cash_balance_masked and contributing_journal_count and not visible_journal_count
-        )
+        cash_balance_masked = any(info.get('masked') for info in security.values())
+        account_ids = journals.mapped('default_account_id').ids or [-1]
+        self.env.cr.execute("SELECT COALESCE(SUM(aml.debit-aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date<%s",
+            (account_ids, str(fom)))
+        opening_cash = float(self.env.cr.fetchone()[0] or 0)
+        self.env.cr.execute("SELECT COALESCE(SUM(aml.debit),0),COALESCE(SUM(aml.credit),0) FROM account_move_line aml JOIN account_move am ON am.id=aml.move_id WHERE aml.account_id=ANY(%s) AND am.state='posted' AND am.date>=%s",
+            (account_ids, str(fom)))
+        row = self.env.cr.fetchone()
+        month_in = float(row[0] or 0)
+        month_out = float(row[1] or 0)
 
         self.env.cr.execute("SELECT COALESCE(SUM(amount_total),0) FROM account_move WHERE move_type='out_invoice' AND state='posted' AND invoice_date>=%s", (str(fom),))
         revenue = float(self.env.cr.fetchone()[0] or 0)
@@ -1567,18 +1496,11 @@ class DashboardData(models.AbstractModel):
             'overdue_bills_count': len(overdue_bills), 'overdue_bills_amount': round(sum(overdue_bills.mapped('amount_residual')), 2),
             'due_soon_count': len(due_soon_bills), 'due_soon_amount': round(sum(due_soon_bills.mapped('amount_residual')), 2),
             'overdue_inv_count': len(overdue_inv), 'overdue_inv_amount': round(sum(overdue_inv.mapped('amount_residual')), 2),
-            # Opening and Balance contain only the visible journal portion.
-            # A trailing '*' in the UI indicates that protected journal values
-            # were excluded.  When every contributing journal is protected, no
-            # numeric balance is sent to the browser.
-            'opening_cash': None if cash_balance_fully_masked else round(opening_cash, 2),
-            'month_in': round(month_in, 2),
-            'month_out': round(month_out, 2),
-            'current_cash': None if cash_balance_fully_masked else round(current_cash, 2),
+            'opening_cash': None if cash_balance_masked else round(opening_cash, 2),
+            'month_in': None if cash_balance_masked else round(month_in, 2),
+            'month_out': None if cash_balance_masked else round(month_out, 2),
+            'current_cash': None if cash_balance_masked else round(opening_cash + month_in - month_out, 2),
             'cash_balance_masked': cash_balance_masked,
-            'cash_balance_partial_masked': cash_balance_partial_masked,
-            'cash_balance_fully_masked': cash_balance_fully_masked,
-            'cash_flow_movements_visible': True,
             'revenue': round(revenue, 2), 'costs': round(costs, 2),
             'gross_profit': round(revenue - costs, 2),
             'margin_pct': round((revenue - costs) / revenue * 100, 1) if revenue else 0,
@@ -1657,19 +1579,13 @@ class DashboardData(models.AbstractModel):
         for journal_id in journal_ids:
             rule = rule_map.get(int(journal_id))
             rule_masked = bool(rule and rule.get('masked'))
-            # A protected journal is masked for everyone who is not explicitly
-            # approved, including Dashboard Admins and System Administrators.
-            # Those groups control configuration access; they are not an
-            # automatic visibility bypass.  This removes the ambiguity that
-            # previously made the rule appear ineffective when the tester was
-            # logged in with an administrator account.
-            explicitly_approved = uid in approved_map.get(int(journal_id), set())
-            masked = bool(rule_masked and not explicitly_approved)
+            approved = is_admin or uid in approved_map.get(int(journal_id), set())
+            masked = bool(rule_masked and not approved)
             result[int(journal_id)] = {
                 'configured': bool(rule),
                 'rule_masked': rule_masked,
                 'masked': masked,
-                'approved': explicitly_approved,
+                'approved': approved,
                 'administrator': is_admin,
             }
         return result

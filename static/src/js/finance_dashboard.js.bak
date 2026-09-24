@@ -26,7 +26,7 @@ class FinanceDashboard extends Component {
             invoices:[], vendor_bills:[], transactions:[], journal_balances:[],
             overdue_bills_count:0, overdue_bills_amount:0, due_soon_count:0, due_soon_amount:0,
             overdue_inv_count:0, overdue_inv_amount:0,
-            opening_cash:0, month_in:0, month_out:0, current_cash:0, cash_balance_masked:false, cash_balance_partial_masked:false, cash_balance_fully_masked:false,
+            opening_cash:0, month_in:0, month_out:0, current_cash:0, cash_balance_masked:false,
             revenue:0, costs:0, gross_profit:0, margin_pct:0,
             trend_data:[], aging:{ar:[],ap:[]},
             financial:{tax_collected:0,tax_paid:0,tax_net:0,unreconciled_count:0,
@@ -50,7 +50,7 @@ class FinanceDashboard extends Component {
             showExportPrompt:false, exportPromptType:'',
             showDrillModal:false, drillTitle:'', drillRows:[], drillJournalId:null,
             showSettings:false, settingsDraft:{}, settingsSaved:false,
-            ledgerSecurityJournals:[], ledgerSecurityUsers:[], ledgerSecurityDraft:{}, ledgerSecuritySaved:false, ledgerSecurityError:'', ledgerSecurityCurrentUserName:'', ledgerSecurityCurrentUserId:0, ledgerSecurityCurrentUserAdmin:false,
+            ledgerSecurityJournals:[], ledgerSecurityUsers:[], ledgerSecurityDraft:{}, ledgerSecuritySaved:false, ledgerSecurityError:'',
             validatingPaymentId:0,
             approvalThresholds:{sale_threshold:0,purchase_threshold:0},
             autoRefresh:false, refreshMins:5,
@@ -99,7 +99,6 @@ class FinanceDashboard extends Component {
     _syncShared(){Object.assign(sharedFilterState,{from_date:this.state.from_date,to_date:this.state.to_date,active_preset:this.state.active_preset,selected_month:this.state.selected_month,selected_year:this.state.selected_year,partner_filter:this.state.partner_filter});}
     _setDates(from,to,preset='custom'){this.state.from_date=this._fmt(from);this.state.to_date=this._fmt(to);this.state.active_preset=preset;this._syncShared();this.loadAll();}
     vis(key){return this.state.visibility[key]!==false;}
-    getSectionLabelEntries(){return Object.entries(this.state.section_labels||{});}
     toggleTable(key){if(Object.prototype.hasOwnProperty.call(this.state.tableOpen,key)) this.state.tableOpen[key]=!this.state.tableOpen[key];}
     async toggleJournalRow(journalId){
         const key=String(journalId);
@@ -212,7 +211,7 @@ class FinanceDashboard extends Component {
                 due_soon_count:widgets.due_soon_count, due_soon_amount:widgets.due_soon_amount,
                 overdue_inv_count:widgets.overdue_inv_count, overdue_inv_amount:widgets.overdue_inv_amount,
                 opening_cash:widgets.opening_cash, month_in:widgets.month_in,
-                month_out:widgets.month_out, current_cash:widgets.current_cash, cash_balance_masked:!!widgets.cash_balance_masked, cash_balance_partial_masked:!!widgets.cash_balance_partial_masked, cash_balance_fully_masked:!!widgets.cash_balance_fully_masked,
+                month_out:widgets.month_out, current_cash:widgets.current_cash, cash_balance_masked:!!widgets.cash_balance_masked,
                 revenue:widgets.revenue, costs:widgets.costs,
                 gross_profit:widgets.gross_profit, margin_pct:widgets.margin_pct,
                 trend_data:trend||[], aging:aging||{ar:[],ap:[]},
@@ -361,9 +360,6 @@ class FinanceDashboard extends Component {
             const sec=await this.orm.call("dashboard.ledger.security","get_config",[]);
             this.state.ledgerSecurityJournals=sec.journals||[];
             this.state.ledgerSecurityUsers=sec.users||[];
-            this.state.ledgerSecurityCurrentUserName=sec.current_user ? sec.current_user.name : '';
-            this.state.ledgerSecurityCurrentUserId=sec.current_user ? Number(sec.current_user.id||0) : 0;
-            this.state.ledgerSecurityCurrentUserAdmin=!!(sec.current_user && sec.current_user.administrator);
             this.state.ledgerSecurityDraft=Object.fromEntries((sec.journals||[]).map(j=>[String(j.id),{masked:!!j.masked,approved_user_ids:[...(j.approved_user_ids||[])]}]));
         } catch(e) {
             console.error("Ledger Balance Security load error:", e);
@@ -427,7 +423,6 @@ class FinanceDashboard extends Component {
         try {
             await this.saveLedgerSecurity();
             this.state.ledgerSecuritySaved=true;
-            await this.loadAll();
             setTimeout(()=>{this.state.ledgerSecuritySaved=false;},2500);
         } catch (e) {
             console.error("Ledger Balance Security save error:", e);

@@ -1,6 +1,7 @@
 /** @odoo-module **/
 import { registry } from "@web/core/registry";
-import { Component, onWillStart, onWillDestroy, onMounted, useState } from "@odoo/owl";
+import { Component, onWillStart, onWillDestroy, onMounted, onPatched, useState } from "@odoo/owl";
+import { enhanceEagleTables } from "./table_tools";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
 
@@ -28,11 +29,28 @@ class Dashboard extends Component {
             overdue_count:0, overdue_amount:0, due_soon_count:0, due_soon_amount:0,
             top_customers:[], month_sales:0, sales_target:0, low_stock:[],
             // Analytics
-            trend_data:[], aging:{ar:[],ap:[]},
+            trend_data:[], trendGranularity:'day', trendLoading:false, trendError:'', aging:{ar:[],ap:[]},
             operations:{pending_deliveries:[],mismatch:[],stock_value:0},
             customers:{new:0,returning:0,total:0,clv:[]},
             financial:{tax_collected:0,tax_paid:0,tax_net:0,unreconciled_count:0,
                        current_sales:0,previous_sales:0,last_year_sales:0},
+            // Stage 2 + 3 management analytics
+            management:{sales_performance:{},product_profitability:[],inventory_risk:[]},
+            warehouseComparison:[],
+            dailyClosing:{date:'',sales_orders:0,sales_amount:0,customer_payments:0,customer_received:0,
+                           vendor_payments:0,vendor_paid:0,customer_invoices:0,customer_invoice_amount:0,
+                           vendor_bills:0,vendor_bill_amount:0,deliveries_done:0,receipts_done:0,
+                           internal_transfers_done:0,draft_payments:0,pending_deliveries:0,pending_receipts:0,
+                           net_cash_movement:0,journal_moves:[]},
+            stageTablesOpen:{product_profitability:false,inventory_risk:false,warehouse_comparison:false,daily_journal_moves:false},
+            dailyClosingDate: new Date().toISOString().split('T')[0],
+            // Stage 4 control center
+            actionCenter:{cards:[],total_open:0,critical:0,as_of:''},
+            stage4Open:{action_center:false},
+            executive:{role:'user',company:'',generated_at:'',what_changed:{},exceptions:{open:0,critical:0},data_quality:{total_flags:0,checks:[]},anomalies:[],audit:[],reorder:[]},
+            executiveOpen:false,
+            ultimate:{can_manage:false,period:{from_date:'',to_date:''},today_change:{},salespeople:[],margin_watch:[],returns:{count:0,amount:0,rate_pct:null,top_products:[]},customer_risk:[],reconciliation:{unreconciled_count:0,unreconciled_amount:0,in_process_count:0,in_process_amount:0},data_quality:{missing_product_barcode:0,missing_product_category:0,non_positive_sale_price:0,negative_stock_quants:0,customer_missing_email:0},approval_queue:{sales:[],purchases:[],sale_threshold:0,purchase_threshold:0}},
+            ultimateOpen:false, ultimateTablesOpen:{salespeople:false,margin_watch:false,returns:false,customer_risk:false,reconciliation:false,data_quality:false,approvals:false},
             // Visibility & access
             role:'user', visibility:{}, section_labels:{}, all_defaults:{},
             // Filters
@@ -57,6 +75,10 @@ class Dashboard extends Component {
             showTargetModal:false, targetInput:'',
             // Settings panel
             showSettings:false, settingsDraft:{}, settingsSaved:false,
+            showCustomize:false, customizeDraft:{}, customizeSaved:false, customizeBusy:false,
+            userPrefs:{density:'comfortable',hidden_sections:[],collapse_on_load:true,show_hints:true,keyboard_shortcuts:true,refresh_mins:5,auto_refresh:false,dark_mode:false,accent_color:'#4f5bd5',workspace:'all'},
+            showHealth:false, health:{allowed:false,checks:[],generated_at:''}, healthLoading:false,
+            loading:false, lastUpdated:'', loadErrors:[],
             approvalThresholds:{sale_threshold:0,purchase_threshold:0},
             // Auto-refresh
             autoRefresh:false, refreshMins:5,
@@ -97,6 +119,7 @@ class Dashboard extends Component {
         try { this.state.recentlyViewed = JSON.parse(localStorage.getItem('eagle_recent_business') || '[]'); } catch(e) {}
 
         onWillStart(async () => {
+            await this.loadUserPreferences();
             await this.loadAll();
             await this.loadSavedFilters();
             await this.loadAttractivePack();
@@ -107,6 +130,11 @@ class Dashboard extends Component {
             window.addEventListener('keydown', this._keydownHandler);
             this.heartbeatNow();
             this._heartbeatTimer = setInterval(() => this.heartbeatNow(), 30000);
+            if (this.state.autoRefresh) this._startRefresh();
+            enhanceEagleTables(this.el, 'business');
+        });
+        onPatched(() => {
+            enhanceEagleTables(this.el, 'business');
         });
         onWillDestroy(() => {
             this._stopRefresh();
@@ -129,7 +157,17 @@ class Dashboard extends Component {
         this.state.from_date=this._fmt(from); this.state.to_date=this._fmt(to);
         this.state.active_preset=preset; this._syncShared(); this.loadAll();
     }
-    vis(key) { return this.state.visibility[key] !== false; }
+    vis(key) {
+        if (this.state.visibility[key] === false) return false;
+        const hidden = this.state.userPrefs.hidden_sections || [];
+        return !hidden.includes(key);
+    }
+    get customizableSectionEntries() {
+        return this.getSectionLabelEntries().filter(([key]) => key !== 'settings');
+    }
+    get hasLoadError() { return (this.state.loadErrors || []).length > 0; }
+    get isAdminOrManager() { return this.state.role === 'admin' || this.state.role === 'manager'; }
+
 
     // ── Presets ───────────────────────────────────────────────────────────
     applyPreset(p) {
@@ -145,19 +183,51 @@ class Dashboard extends Component {
     onDateChange(){if(this.state.from_date&&this.state.to_date){this.state.active_preset='custom';this._syncShared();this.loadAll();}}
 
     // ── Data loading ──────────────────────────────────────────────────────
-    async loadAll() {
+    async _safeRpc(model, method, args, fallback, label) {
         try {
-            const [data, widgets, vis, trend, aging, ops, cust, fin, notes, company] = await Promise.all([
-                this.orm.call("dashboard.data","get_dashboard",[this.state.from_date||false,this.state.to_date||false]),
-                this.orm.call("dashboard.data","get_business_widgets",[]),
-                this.orm.call("dashboard.data","get_visibility",[]),
-                this.orm.call("dashboard.data","get_trend_data",[this.state.from_date||false,this.state.to_date||false,'sale']),
-                this.orm.call("dashboard.data","get_aging_report",[]),
-                this.orm.call("dashboard.data","get_operations_data",[]),
-                this.orm.call("dashboard.data","get_customer_intelligence",[this.state.from_date||false,this.state.to_date||false]),
-                this.orm.call("dashboard.data","get_financial_controls",[this.state.from_date||false,this.state.to_date||false]),
-                this.orm.call("dashboard.data","get_team_notes",[]),
-                this.orm.call("dashboard.data","get_company_info",[]),
+            return await this.orm.call(model, method, args);
+        } catch (e) {
+            this._loadErrors = this._loadErrors || [];
+            this._loadErrors.push(label || `${model}.${method}`);
+            console.error(`Dashboard ${label || method} load error:`, e);
+            return fallback;
+        }
+    }
+
+    async loadUserPreferences() {
+        try {
+            const prefs = await this.orm.call("dashboard.data", "get_user_preferences", []);
+            if (prefs) {
+                this.state.userPrefs = Object.assign({}, this.state.userPrefs, prefs);
+                this.state.refreshMins = Number(prefs.refresh_mins) || 5;
+                this.state.autoRefresh = !!prefs.auto_refresh;
+                this.state.themeColor = prefs.accent_color || this.state.themeColor;
+                this.state.darkMode = !!prefs.dark_mode;
+                try { localStorage.setItem('eagle_dark_mode', this.state.darkMode ? '1' : '0'); } catch(e) {}
+            }
+        } catch (e) {
+            // Preferences are optional; retain safe defaults.
+            console.error('Dashboard preferences load error:', e);
+        }
+    }
+
+    async loadAll() {
+        this.state.loading = true;
+        this._loadErrors = [];
+        try {
+            const [data, widgets, vis, trend, aging, ops, cust, fin, notes, company, stage23, control] = await Promise.all([
+                this._safeRpc("dashboard.data","get_dashboard",[this.state.from_date||false,this.state.to_date||false],{quotations:[],orders:[],purchases:[],rfq:[],transactions:[]},'Core data'),
+                this._safeRpc("dashboard.data","get_business_widgets",[],{overdue_count:0,overdue_amount:0,due_soon_count:0,due_soon_amount:0,top_customers:[],month_sales:0,sales_target:0,low_stock:[]},'Business KPIs'),
+                this._safeRpc("dashboard.data","get_visibility",[],{role:this.state.role,visibility:{},section_labels:{},all_defaults:{}},'Visibility'),
+                this._safeRpc("dashboard.data","get_trend_data",[this.state.from_date||false,this.state.to_date||false,'sale',this.state.trendGranularity||'day'],[],'Trend'),
+                this._safeRpc("dashboard.data","get_aging_report",[],{ar:[],ap:[]},'Aging'),
+                this._safeRpc("dashboard.data","get_operations_data",[],{pending_deliveries:[],mismatch:[],stock_value:0},'Operations'),
+                this._safeRpc("dashboard.data","get_customer_intelligence",[this.state.from_date||false,this.state.to_date||false],{new:0,returning:0,total:0,clv:[]},'Customers'),
+                this._safeRpc("dashboard.data","get_financial_controls",[this.state.from_date||false,this.state.to_date||false],{},'Financial controls'),
+                this._safeRpc("dashboard.data","get_team_notes",[],this.state.teamNotes||'','Team notes'),
+                this._safeRpc("dashboard.data","get_company_info",[],{name:'',id:0},'Company'),
+                this._safeRpc("dashboard.data","get_management_insights",[this.state.from_date||false,this.state.to_date||false,this.state.dailyClosingDate||false],{},'Management analytics'),
+                this._safeRpc("dashboard.data","get_control_center",[this.state.from_date||false,this.state.to_date||false],{},'Control center'),
             ]);
 
             this._orderLines={}; this._purchaseLines={};
@@ -177,6 +247,13 @@ class Dashboard extends Component {
                 operations: ops||{pending_deliveries:[],mismatch:[],stock_value:0},
                 customers:  cust||{new:0,returning:0,total:0,clv:[]},
                 financial:  fin||{},
+                management:  stage23 ? (stage23.sales_performance ? {sales_performance: stage23.sales_performance, product_profitability: stage23.product_profitability||[], inventory_risk: stage23.inventory_risk||[]} : {sales_performance:{}, product_profitability:[], inventory_risk:[]}) : {sales_performance:{},product_profitability:[],inventory_risk:[]},
+                warehouseComparison: stage23 ? (stage23.warehouse_comparison||[]) : [],
+                dailyClosing: stage23 ? (stage23.daily_closing||this.state.dailyClosing) : this.state.dailyClosing,
+                actionCenter: control && control.action_center ? control.action_center : this.state.actionCenter,
+                // Stage 4 control-center payload now also contains Stage 5.
+                ultimate: control && control.ultimate ? control.ultimate : this.state.ultimate,
+                executive: control && control.executive ? control.executive : this.state.executive,
                 role:       vis.role,
                 visibility: vis.visibility||{},
                 section_labels: vis.section_labels||{},
@@ -199,8 +276,18 @@ class Dashboard extends Component {
 
             // Push notification checks
             this._checkPushAlerts(widgets);
-        } catch(e) { console.error("Dashboard load error:",e); }
+        } catch(e) {
+            this._loadErrors = this._loadErrors || [];
+            this._loadErrors.push("Dashboard core");
+            console.error("Dashboard load error:",e);
+        } finally {
+            this.state.loadErrors = [...new Set(this._loadErrors || [])];
+            this.state.lastUpdated = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+            this.state.loading = false;
+        }
     }
+
+    async retryLoad() { await this.loadAll(); }
 
     // ── Load the lighter "attractive pack" widgets in parallel ─────────────
     async loadAttractivePack() {
@@ -218,7 +305,7 @@ class Dashboard extends Component {
             this.state.productBundles = bundles || [];
             this.state.streak = streak ? streak.streak : 0;
             this.state.dailyTarget = streak ? streak.daily_target : 0;
-            this.state.themeColor = theme || '#4f5bd5';
+            this.state.themeColor = this.state.userPrefs.accent_color || theme || '#4f5bd5';
             this.state.onlineUsers = online || [];
             if (this.targetPct >= 100 && !this._confettiShown) {
                 this._confettiShown = true;
@@ -247,6 +334,83 @@ class Dashboard extends Component {
     get filteredQuotations()   { return this.state.quotations.filter(r=>this._ok(r)); }
     get filteredRfq()          { return this.state.rfq.filter(r=>this._ok(r)); }
     get filteredTransactions() { return this.state.transactions.filter(r=>this._ok(r)); }
+
+    formatAmount(value) { const n=parseFloat(value); return Number.isFinite(n) ? n.toFixed(2) : '0.00'; }
+    getSectionLabelEntries() { return Object.entries(this.state.section_labels || {}); }
+    absAmount(value) { const n=parseFloat(value); return Number.isFinite(n) ? Math.abs(n) : 0; }
+    roundPercent(a,b) { const x=parseFloat(a)||0, y=parseFloat(b)||0; return y ? Math.round(x/y*100) : 0; }
+
+    // ── Stage 4 control center ───────────────────────────────────────────
+    toggleStage4(key) {
+        if (Object.prototype.hasOwnProperty.call(this.state.stage4Open, key)) {
+            this.state.stage4Open[key] = !this.state.stage4Open[key];
+        }
+    }
+    toggleExecutive() { this.state.executiveOpen = !this.state.executiveOpen; }
+    openExecutiveAnomalies() { this._newTab('sale.order',[['state','in',['sale','done']],['amount_total','>',0]],'Sales Anomalies Review'); }
+    openExecutiveAudit() { this._newTab('dashboard.audit.event',[['company_id','=',this.state.companyId]],'Dashboard Audit Trail'); }
+    openExecutiveReorder() { this._newTab('product.product',[['active','=',true],['type','in',['product','consu']]],'Inventory Reorder Review'); }
+    toggleUltimateTable(key) {
+        if (Object.prototype.hasOwnProperty.call(this.state.ultimateTablesOpen, key)) {
+            this.state.ultimateTablesOpen[key] = !this.state.ultimateTablesOpen[key];
+        }
+    }
+    toggleUltimate() { this.state.ultimateOpen = !this.state.ultimateOpen; }
+    openUltimateProduct(id) { if (id) this._openTab('product.product', id); }
+    openUltimatePartner(id) { if (id) this._openTab('res.partner', id); }
+    openUltimateOrder(id) { if (id) this._openTab('sale.order', id); }
+    openUltimateRefunds() { this._newTab('account.move',[['move_type','=','out_refund'],['state','=','posted']],'Customer Refunds'); }
+    openUltimateReconciliation() { this._newTab('account.bank.statement.line',[['is_reconciled','=',false],['journal_id.type','in',['bank','cash']]],'Unreconciled Bank/Cash Lines'); }
+    openUltimateApprovals() { this._newTab('sale.order',[['state','=','draft']],'Pending Sale Approvals'); }
+    printManagementPack() {
+        const u=this.state.ultimate||{};
+        const tc=u.today_change||{}; const dq=u.data_quality||{}; const rec=u.reconciliation||{}; const ret=u.returns||{};
+        const rows=(u.can_manage? (u.salespeople||[]).map(r=>`<tr><td>${this._esc(r.name)}</td><td style=\"text-align:right\">${r.orders}</td><td style=\"text-align:right\">BDT ${this.formatAmount(r.sales)}</td></tr>`).join('') : '<tr><td colspan=3>Restricted</td></tr>');
+        const style=Array.from(document.querySelectorAll('link[rel=\"stylesheet\"]')).map(l=>`<link rel=\"stylesheet\" href=\"${l.href}\">`).join('');
+        const pw=window.open('','_blank','width=1100,height=800'); if(!pw)return;
+        pw.document.write(`<!doctype html><html><head><meta charset=\"utf-8\"><title>Management Pack</title>${style}<style>body{font-family:sans-serif;padding:24px;color:#111827}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin-top:22px;border-bottom:2px solid #1a1f36;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.k{border:1px solid #e5e7eb;padding:10px;border-radius:6px}.k b{display:block;font-size:18px;margin-top:4px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left}@media print{@page{size:A4;margin:10mm}}</style></head><body><h1>Management Control Pack</h1><div>Period: ${this._esc(u.period?.from_date||'')} — ${this._esc(u.period?.to_date||'')}</div><h2>Today vs Yesterday</h2><div class=\"grid\"><div class=\"k\">Sales Today<b>BDT ${this.formatAmount(tc.sales_today)}</b></div><div class=\"k\">Sales Change<b>${tc.sales_change_pct===null?'—':tc.sales_change_pct+'%'}</b></div><div class=\"k\">Customer Received<b>BDT ${this.formatAmount(tc.received_today)}</b></div><div class=\"k\">Vendor Paid<b>BDT ${this.formatAmount(tc.paid_today)}</b></div></div><h2>Returns</h2><div>Refunds: ${ret.count||0} · BDT ${this.formatAmount(ret.amount)}</div><h2>Reconciliation</h2><div>Unreconciled lines: ${rec.unreconciled_count||0} · In-process payments: ${rec.in_process_count||0}</div><h2>Data Quality</h2><div>Barcode: ${dq.missing_product_barcode||0} · Category: ${dq.missing_product_category||0} · Sale Price: ${dq.non_positive_sale_price||0} · Negative Stock: ${dq.negative_stock_quants||0} · Customer Email: ${dq.customer_missing_email||0}</div><h2>Salesperson Performance</h2><table><thead><tr><th>Salesperson</th><th>Orders</th><th>Sales</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+        pw.document.close(); pw.onload=()=>{try{pw.focus();pw.print();pw.close();}catch(e){}}; setTimeout(()=>{try{pw.focus();pw.print();pw.close();}catch(e){}},1200);
+    }
+    _esc(value) { return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch])); }
+    openActionCenterCard(card) {
+        if (!card || !card.model) return;
+        this._newTab(card.model, card.domain || [], card.label || 'Action Center');
+    }
+    get actionCenterCards() { return this.state.actionCenter.cards || []; }
+
+    // ── Stage 2 + 3 management analytics ────────────────────────────────
+    toggleStageTable(key) {
+        if (Object.prototype.hasOwnProperty.call(this.state.stageTablesOpen, key)) {
+            this.state.stageTablesOpen[key] = !this.state.stageTablesOpen[key];
+        }
+    }
+    async onDailyClosingDateChange(ev) {
+        this.state.dailyClosingDate = ev.target.value || new Date().toISOString().split('T')[0];
+        try {
+            const data = await this.orm.call("dashboard.data","get_management_insights",[
+                this.state.from_date||false,this.state.to_date||false,this.state.dailyClosingDate
+            ]);
+            this.state.dailyClosing = data ? (data.daily_closing||this.state.dailyClosing) : this.state.dailyClosing;
+        } catch (e) {
+            console.error("Daily closing load error:", e);
+        }
+    }
+    openManagementProduct(id) { this._openTab('product.product', id); }
+
+    printDailyClosing() {
+        const d = this.state.dailyClosing || {};
+        const pw = window.open('', '_blank', 'width=1100,height=800');
+        if (!pw) return;
+        const money = v => {
+            const n = parseFloat(v);
+            return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+        };
+        const moves = d.journal_moves || [];
+        const rows = moves.map(r => `<tr><td>${String(r.journal_name||'')}</td><td class="num">${r.balance_masked?'••••••':money(r.opening)}</td><td class="num in">${money(r.deposit)}</td><td class="num out">${money(r.withdraw)}</td><td class="num">${r.change>=0?'+':''}${money(r.change)}</td><td class="num">${r.balance_masked?'••••••':money(r.closing)}</td></tr>`).join('');
+        pw.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Daily Closing ${d.date||''}</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111827}h1{margin:0 0 4px}h2{margin:24px 0 8px;font-size:16px;border-bottom:2px solid #111827;padding-bottom:4px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.box{border:1px solid #d1d5db;padding:10px;border-radius:8px}.lbl{font-size:11px;color:#6b7280}.val{font-size:18px;font-weight:700;margin-top:4px}.num{text-align:right;font-variant-numeric:tabular-nums}.in{color:#059669}.out{color:#dc2626}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:8px;border-bottom:1px solid #e5e7eb}th{background:#1a1f36;color:#fff;text-align:left}@media print{@page{size:A4 landscape;margin:12mm}body{padding:0}}</style></head><body><h1>Daily Closing</h1><div>Business Dashboard · ${d.date||''}</div><div class="grid" style="margin-top:16px"><div class="box"><div class="lbl">Sales</div><div class="val">BDT ${money(d.sales_amount)}</div><div class="lbl">${d.sales_orders||0} order(s)</div></div><div class="box"><div class="lbl">Customer Received</div><div class="val">BDT ${money(d.customer_received)}</div><div class="lbl">${d.customer_payments||0} payment(s)</div></div><div class="box"><div class="lbl">Vendor Paid</div><div class="val">BDT ${money(d.vendor_paid)}</div><div class="lbl">${d.vendor_payments||0} payment(s)</div></div><div class="box"><div class="lbl">Net Cash Movement</div><div class="val">BDT ${money(d.net_cash_movement)}</div></div></div><h2>Documents & Operations</h2><div class="grid"><div class="box"><div class="lbl">Customer Invoices</div><div class="val">${d.customer_invoices||0} · BDT ${money(d.customer_invoice_amount)}</div></div><div class="box"><div class="lbl">Vendor Bills</div><div class="val">${d.vendor_bills||0} · BDT ${money(d.vendor_bill_amount)}</div></div><div class="box"><div class="lbl">Deliveries Done</div><div class="val">${d.deliveries_done||0}</div></div><div class="box"><div class="lbl">Receipts Done</div><div class="val">${d.receipts_done||0}</div></div></div><p style="margin-top:10px">Internal Transfers Done: <b>${d.internal_transfers_done||0}</b> · Draft Payments: <b>${d.draft_payments||0}</b> · Pending Deliveries: <b>${d.pending_deliveries||0}</b> · Pending Receipts: <b>${d.pending_receipts||0}</b></p><h2>Journal Movement</h2><table><thead><tr><th>Journal</th><th>Previous</th><th>Deposit</th><th>Withdraw</th><th>Change</th><th>New Balance</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+        pw.document.close();
+        setTimeout(()=>{ try { pw.focus(); pw.print(); pw.close(); } catch(e) {} }, 500);
+    }
 
     // ── Quick search ──────────────────────────────────────────────────────
     onQuickSearch(ev) {
@@ -285,10 +449,129 @@ class Dashboard extends Component {
     get animDueSoonCount()  { return this.state.animCounters.due_soon_count !== undefined ? this.state.animCounters.due_soon_count : this.state.due_soon_count; }
     get animMonthSales()    { return this.state.animCounters.month_sales !== undefined ? this.state.animCounters.month_sales : Math.round(this.state.month_sales); }
 
-    // ── Trend chart max (kept in JS since OWL doesn't support spread syntax) ──
-    get trendMax() {
-        const vals = this.state.trend_data.map(d => d.amount);
-        return vals.length ? Math.max.apply(null, vals.concat([1])) : 1;
+    // ── Sales trend graph ────────────────────────────────────────────────
+    get trendPeriods() {
+        return [
+            {key:'day', label:'Day'},
+            {key:'week', label:'Week'},
+            {key:'month', label:'Month'},
+            {key:'quarter', label:'Quarter'},
+            {key:'year', label:'Year'},
+        ];
+    }
+    setTrendGranularity(granularity) {
+        if (!['day','week','month','quarter','year'].includes(granularity)) return;
+        if (this.state.trendGranularity === granularity) return;
+        this.state.trendGranularity = granularity;
+        this.loadAll();
+    }
+    get trendChartWidth() { return 820; }
+    get trendChartHeight() { return 300; }
+    get trendPlotLeft() { return 58; }
+    get trendPlotRight() { return 18; }
+    get trendPlotTop() { return 18; }
+    get trendPlotBottom() { return 48; }
+    get trendPlotWidth() { return this.trendChartWidth - this.trendPlotLeft - this.trendPlotRight; }
+    get trendPlotHeight() { return this.trendChartHeight - this.trendPlotTop - this.trendPlotBottom; }
+    get trendAmounts() { return (this.state.trend_data || []).map(d => Number(d.amount) || 0); }
+    get trendRawMax() {
+        const vals = this.trendAmounts;
+        return vals.length ? Math.max.apply(null, vals.concat([0])) : 0;
+    }
+    _niceStep(value) {
+        if (value <= 0) return 1;
+        const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+        const normalized = value / magnitude;
+        const base = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+        return base * magnitude;
+    }
+    get trendYMax() {
+        const raw = this.trendRawMax;
+        if (!raw) return 1;
+        const step = this._niceStep(raw / 5);
+        return Math.max(step, Math.ceil(raw / step) * step);
+    }
+    get trendYTicks() {
+        const max = this.trendYMax;
+        const ticks = [];
+        for (let i=0; i<=5; i++) {
+            const value = max * (1 - i / 5);
+            ticks.push({key:`y${i}`, value, y:this.trendPlotTop + (this.trendPlotHeight * i / 5)});
+        }
+        return ticks;
+    }
+    _trendDate(iso) {
+        const p = String(iso || '').split('-').map(Number);
+        return p.length === 3 && p[0] && p[1] && p[2] ? new Date(p[0], p[1]-1, p[2]) : null;
+    }
+    _isoWeekNumber(date) {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const day = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - day);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+    trendAxisLabel(iso) {
+        const d = this._trendDate(iso);
+        if (!d) return String(iso || '');
+        const g = this.state.trendGranularity;
+        const month = d.toLocaleString('default', {month:'short'});
+        const year = d.getFullYear();
+        if (g === 'day') return `${month} ${String(d.getDate()).padStart(2,'0')}`;
+        if (g === 'week') return `W${this._isoWeekNumber(d)} · ${month} ${String(d.getDate()).padStart(2,'0')}`;
+        if (g === 'month') return `${month} ${year}`;
+        if (g === 'quarter') return `Q${Math.floor(d.getMonth()/3)+1} ${year}`;
+        return String(year);
+    }
+    trendFullLabel(iso) {
+        const d = this._trendDate(iso);
+        if (!d) return String(iso || '');
+        const month = d.toLocaleString('default', {month:'long'});
+        const year = d.getFullYear();
+        if (this.state.trendGranularity === 'day') return `${month} ${d.getDate()}, ${year}`;
+        if (this.state.trendGranularity === 'week') return `Week ${this._isoWeekNumber(d)}, starting ${month} ${d.getDate()}, ${year}`;
+        if (this.state.trendGranularity === 'month') return `${month} ${year}`;
+        if (this.state.trendGranularity === 'quarter') return `Q${Math.floor(d.getMonth()/3)+1} ${year}`;
+        return String(year);
+    }
+    formatTrendCompact(value) {
+        const n = Number(value) || 0;
+        const a = Math.abs(n);
+        if (a >= 1000000000) return `${(n/1000000000).toFixed(1)}B`;
+        if (a >= 1000000) return `${(n/1000000).toFixed(1)}M`;
+        if (a >= 1000) return `${(n/1000).toFixed(a >= 10000 ? 0 : 1)}K`;
+        return n.toFixed(0);
+    }
+    get trendChartPoints() {
+        const data = this.state.trend_data || [];
+        if (!data.length) return [];
+        const max = this.trendYMax || 1;
+        const denom = Math.max(data.length - 1, 1);
+        return data.map((d, index) => {
+            const amount = Number(d.amount) || 0;
+            const x = this.trendPlotLeft + (index / denom) * this.trendPlotWidth;
+            const y = this.trendPlotTop + this.trendPlotHeight - (amount / max) * this.trendPlotHeight;
+            return {key:`${d.date}_${index}`, date:d.date, amount, x, y, label:this.trendAxisLabel(d.date), fullLabel:this.trendFullLabel(d.date)};
+        });
+    }
+    get trendPolyline() { return this.trendChartPoints.map(p => `${p.x},${p.y}`).join(' '); }
+    get trendAreaPoints() {
+        const pts = this.trendChartPoints;
+        if (!pts.length) return '';
+        const bottom = this.trendPlotTop + this.trendPlotHeight;
+        return `${pts[0].x},${bottom} ${pts.map(p => `${p.x},${p.y}`).join(' ')} ${pts[pts.length-1].x},${bottom}`;
+    }
+    shouldShowTrendXLabel(index) {
+        const n = this.trendChartPoints.length;
+        if (n <= 10) return true;
+        if (n <= 20) return index % 2 === 0 || index === n-1;
+        const step = Math.ceil(n / 8);
+        return index % step === 0 || index === n-1;
+    }
+    get trendSummary() {
+        const n = (this.state.trend_data || []).length;
+        const total = this.trendAmounts.reduce((s, v) => s + v, 0);
+        return {points:n, total};
     }
 
     // ── Sales target progress ─────────────────────────────────────────────
@@ -318,6 +601,72 @@ class Dashboard extends Component {
         }
         setTimeout(()=>{this.state.notesSaved=false; this.state.notesMentioned=null;},3000);
     }
+
+    // ── Personal customization ───────────────────────────────────────────
+    openCustomize() {
+        this.state.customizeDraft = JSON.parse(JSON.stringify(this.state.userPrefs || {}));
+        this.state.customizeSaved = false;
+        this.state.showCustomize = true;
+    }
+    closeCustomize() { this.state.showCustomize = false; }
+    applyWorkspacePreset(name) {
+        const presets = {
+            executive: ['notes','clv','orders','purchases','quotations','rfq','transactions','analytics','customers'],
+            finance: ['operations','customers','clv','product_profitability','inventory_risk','warehouse_comparison','sales_performance'],
+            sales: ['financial','aging','journal','journal_summary','transactions','warehouse_comparison','daily_closing','reconciliation'],
+            operations: ['financial','aging','journal','journal_summary','transactions','product_profitability','clv','customers'],
+            minimal: ['analytics','chart','operations','customers','aging','financial','notes','journal','journal_summary','transactions','clv','sales_performance','product_profitability','inventory_risk','warehouse_comparison','daily_closing'],
+            all: [],
+        };
+        if (!Object.prototype.hasOwnProperty.call(presets, name)) return;
+        this.state.customizeDraft.hidden_sections = [...presets[name]];
+        this.state.customizeDraft.workspace = name;
+    }
+
+    toggleCustomSection(key) {
+        const list = this.state.customizeDraft.hidden_sections || [];
+        const idx = list.indexOf(key);
+        if (idx >= 0) list.splice(idx, 1); else list.push(key);
+        this.state.customizeDraft.hidden_sections = list;
+    }
+    isCustomSectionVisible(key) { return !(this.state.customizeDraft.hidden_sections || []).includes(key); }
+    async saveCustomize() {
+        this.state.customizeBusy = true;
+        try {
+            const saved = await this.orm.call("dashboard.data", "save_user_preferences", [this.state.customizeDraft]);
+            this.state.userPrefs = Object.assign({}, this.state.userPrefs, saved || this.state.customizeDraft);
+            this.state.themeColor = this.state.userPrefs.accent_color || this.state.themeColor;
+            this.state.darkMode = !!this.state.userPrefs.dark_mode;
+            this.state.refreshMins = Number(this.state.userPrefs.refresh_mins) || 5;
+            this.state.autoRefresh = !!this.state.userPrefs.auto_refresh;
+            try { localStorage.setItem('eagle_dark_mode', this.state.darkMode ? '1' : '0'); } catch(e) {}
+            if (this.state.autoRefresh) this._startRefresh(); else this._stopRefresh();
+            this.state.customizeSaved = true;
+            setTimeout(() => { this.state.customizeSaved = false; this.state.showCustomize = false; }, 600);
+        } catch (e) { console.error('Save dashboard customization error:', e); }
+        finally { this.state.customizeBusy = false; }
+    }
+    async resetCustomize() {
+        const prefs = await this.orm.call("dashboard.data", "reset_user_preferences", []);
+        this.state.userPrefs = Object.assign({}, this.state.userPrefs, prefs || {});
+        this.state.customizeDraft = JSON.parse(JSON.stringify(this.state.userPrefs));
+        this.state.themeColor = this.state.userPrefs.accent_color || '#4f5bd5';
+        this.state.darkMode = !!this.state.userPrefs.dark_mode;
+        this.state.refreshMins = Number(this.state.userPrefs.refresh_mins) || 5;
+        this.state.autoRefresh = !!this.state.userPrefs.auto_refresh;
+        if (this.state.autoRefresh) this._startRefresh(); else this._stopRefresh();
+    }
+
+    // ── Dashboard health / self diagnostics ────────────────────────────────
+    async openHealth() {
+        if (!this.isAdminOrManager) return;
+        this.state.showHealth = true;
+        this.state.healthLoading = true;
+        try { this.state.health = await this.orm.call("dashboard.data", "get_dashboard_health", []); }
+        catch (e) { this.state.health = {allowed:false,checks:[],generated_at:''}; console.error('Health check error:', e); }
+        finally { this.state.healthLoading = false; }
+    }
+    closeHealth() { this.state.showHealth = false; }
 
     // ── Settings ─────────────────────────────────────────────────────────
     openSettings() {
@@ -590,6 +939,7 @@ class Dashboard extends Component {
 
     // ── Command palette (Ctrl+K) ─────────────────────────────────────────
     _onKeyDown(ev) {
+        if (this.state.userPrefs.keyboard_shortcuts === false) return;
         const tag = (ev.target.tagName || '').toLowerCase();
         const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || ev.target.isContentEditable;
 
