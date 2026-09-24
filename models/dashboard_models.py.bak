@@ -1,0 +1,255 @@
+import uuid
+from odoo import models, fields, api
+
+
+class DashboardSavedFilter(models.Model):
+    def init(self):
+        # Idempotent indexes for the dashboard's high-frequency operational queries.
+        # They are intentionally created only when the columns exist so upgrades
+        # remain safe across supported Odoo 18 database layouts.
+        cr = self.env.cr
+        statements = [
+            ("sale_order_company_state_date_idx", "CREATE INDEX IF NOT EXISTS sale_order_company_state_date_idx ON sale_order (company_id, state, date_order)"),
+            ("account_payment_company_journal_date_state_idx", "CREATE INDEX IF NOT EXISTS account_payment_company_journal_date_state_idx ON account_payment (company_id, journal_id, date, state)"),
+            ("account_move_company_type_state_date_idx", "CREATE INDEX IF NOT EXISTS account_move_company_type_state_date_idx ON account_move (company_id, move_type, state, invoice_date)"),
+            ("account_move_company_due_idx", "CREATE INDEX IF NOT EXISTS account_move_company_due_idx ON account_move (company_id, invoice_date_due, payment_state)"),
+            ("stock_picking_company_type_state_sched_idx", "CREATE INDEX IF NOT EXISTS stock_picking_company_type_state_sched_idx ON stock_picking (company_id, picking_type_id, state, scheduled_date)"),
+            ("account_move_line_company_account_date_idx", "CREATE INDEX IF NOT EXISTS account_move_line_company_account_date_idx ON account_move_line (company_id, account_id, date)"),
+            ("account_bank_statement_line_company_journal_rec_idx", "CREATE INDEX IF NOT EXISTS account_bank_statement_line_company_journal_rec_idx ON account_bank_statement_line (company_id, journal_id, is_reconciled)"),
+        ]
+        for name, sql in statements:
+            try:
+                with cr.savepoint():
+                    cr.execute(sql)
+            except Exception:
+                # Never block module installation because an optional index
+                # cannot be created on a customized database.
+                continue
+
+    _name = "dashboard.saved.filter"
+    _description = "Dashboard Saved Filter Preset"
+    _order = "create_date desc"
+
+    name = fields.Char(required=True)
+    dashboard = fields.Selection([('business', 'Business'), ('finance', 'Finance')], required=True, default='business')
+    from_date = fields.Char()
+    to_date = fields.Char()
+    partner_filter = fields.Char()
+    active_preset = fields.Char()
+    user_id = fields.Many2one('res.users', default=lambda self: self.env.user, required=True)
+
+
+class DashboardAuditEvent(models.Model):
+    _name = "dashboard.audit.event"
+    _description = "Eagle Dashboard Audit Event"
+    _order = "create_date desc, id desc"
+
+    user_id = fields.Many2one("res.users", required=True, index=True, ondelete="restrict")
+    company_id = fields.Many2one("res.company", required=True, index=True, default=lambda self: self.env.company, ondelete="restrict")
+    action = fields.Char(required=True, index=True)
+    model_name = fields.Char(string="Model", index=True)
+    record_id = fields.Integer(index=True)
+    reference = fields.Char(index=True)
+    details = fields.Text()
+    create_date = fields.Datetime(readonly=True)
+
+    @api.model
+    def log_event(self, action, model_name=False, record_id=False, reference=False, details=False):
+        return self.sudo().create({
+            "user_id": self.env.uid,
+            "company_id": self.env.company.id,
+            "action": str(action)[:120],
+            "model_name": str(model_name)[:120] if model_name else False,
+            "record_id": int(record_id) if record_id else False,
+            "reference": str(reference)[:255] if reference else False,
+            "details": str(details)[:2000] if details else False,
+        })
+
+
+class DashboardApprovalConfig(models.Model):
+    _name = "dashboard.approval.config"
+    _description = "Approval Threshold Configuration"
+
+    sale_threshold = fields.Float(string="Sale Order Approval Threshold", default=0.0,
+        help="Sale orders above this amount require manager approval before confirmation. 0 = disabled.")
+    purchase_threshold = fields.Float(string="Purchase Order Approval Threshold", default=0.0,
+        help="Purchase orders above this amount require manager approval before confirmation. 0 = disabled.")
+
+    @api.model
+    def get_config(self):
+        cfg = self.search([], limit=1)
+        if not cfg:
+            cfg = self.create({})
+        return {'sale_threshold': cfg.sale_threshold, 'purchase_threshold': cfg.purchase_threshold}
+
+    @api.model
+    def set_config(self, sale_threshold, purchase_threshold):
+        cfg = self.search([], limit=1)
+        if not cfg:
+            cfg = self.create({})
+        cfg.write({'sale_threshold': sale_threshold, 'purchase_threshold': purchase_threshold})
+        return True
+
+
+class DashboardSnoozedProduct(models.Model):
+    _name = "dashboard.snoozed.product"
+    _description = "Temporarily Hidden Low-Stock Product"
+    _order = "hide_until desc"
+
+    product_id = fields.Many2one('product.product', required=True, ondelete='cascade')
+    hide_until = fields.Date(required=True, string="Hidden Until")
+    user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
+
+    _sql_constraints = [
+        ('product_uniq', 'unique(product_id)', 'This product is already snoozed. Update the existing entry instead.')
+    ]
+
+
+class DashboardLedgerSecurity(models.Model):
+    _name = "dashboard.ledger.security"
+    _description = "Dashboard Ledger Balance Visibility Security"
+    _order = "journal_id"
+
+    journal_id = fields.Many2one(
+        "account.journal", required=True, ondelete="cascade", index=True,
+        domain=[("type", "in", ["bank", "cash"])],
+    )
+    masked = fields.Boolean(
+        string="Mask balances", default=False,
+        help="Mask Previous and Current balances for users who are not approved. Change remains visible to everyone.",
+    )
+    approved_user_ids = fields.Many2many(
+        "res.users",
+        "dashboard_ledger_security_user_rel",
+        "security_id", "user_id",
+        string="Approved Users",
+        domain=[("active", "=", True), ("share", "=", False)],
+        help="Users approved to see the unmasked Previous and Current balances for this journal.",
+    )
+
+    _sql_constraints = [
+        ("journal_uniq", "unique(journal_id)", "Each journal can have only one dashboard balance security rule."),
+    ]
+
+    @api.model
+    def _check_dashboard_admin(self):
+        if not (self.env.user.has_group("eagle_business_dashboard.group_dashboard_admin") or self.env.user.has_group("base.group_system")):
+            from odoo.exceptions import AccessError
+            raise AccessError("Only Dashboard Admins can configure ledger balance visibility.")
+
+    @api.model
+    def sync_journal_rules(self):
+        """Ensure every bank/cash journal has a configuration row.
+
+        This keeps the standalone Ledger Balance Security menu useful even
+        before the Finance Dashboard settings modal has been opened.
+        """
+        self._check_dashboard_admin()
+        journals = self.env["account.journal"].search(
+            [("type", "in", ["bank", "cash"])], order="name asc"
+        )
+        existing = {r.journal_id.id for r in self.search([])}
+        for journal in journals:
+            if journal.id not in existing:
+                self.create({"journal_id": journal.id})
+        return True
+
+    @api.model
+    def get_config(self):
+        self._check_dashboard_admin()
+        self.sync_journal_rules()
+        journals = self.env["account.journal"].search(
+            [("type", "in", ["bank", "cash"])], order="name asc"
+        )
+        users = self.env["res.users"].search(
+            [("active", "=", True), ("share", "=", False)], order="name asc"
+        )
+        rules = {r.journal_id.id: r for r in self.search([])}
+        return {
+            "journals": [
+                {
+                    "id": j.id,
+                    "name": j.name,
+                    "masked": bool(rules[j.id].masked) if j.id in rules else False,
+                    "approved_user_ids": rules[j.id].approved_user_ids.ids if j.id in rules else [],
+                }
+                for j in journals
+            ],
+            "users": [{"id": u.id, "name": u.name} for u in users],
+        }
+
+    @api.model
+    def set_config(self, config):
+        self._check_dashboard_admin()
+        config = config or []
+        allowed_journal_ids = set(self.env["account.journal"].search(
+            [("type", "in", ["bank", "cash"])]
+        ).ids)
+        allowed_user_ids = set(self.env["res.users"].search(
+            [("active", "=", True), ("share", "=", False)]
+        ).ids)
+
+        seen = set()
+        for item in config:
+            journal_id = int(item.get("journal_id") or 0)
+            if journal_id not in allowed_journal_ids or journal_id in seen:
+                continue
+            seen.add(journal_id)
+            user_ids = [
+                int(uid) for uid in (item.get("approved_user_ids") or [])
+                if int(uid) in allowed_user_ids
+            ]
+            vals = {
+                "masked": bool(item.get("masked")),
+                "approved_user_ids": [(6, 0, user_ids)],
+            }
+            rule = self.search([("journal_id", "=", journal_id)], limit=1)
+            if rule:
+                rule.write(vals)
+            elif vals["masked"] or user_ids:
+                self.create(dict(vals, journal_id=journal_id))
+
+        # Do not delete omitted rules. The UI normally submits every journal,
+        # but retaining omitted configurations prevents a partial/failed UI load
+        # from silently disabling an existing security rule.
+        return True
+
+
+# ─── Feature batch 3: presence, comments, snapshot links ──────────────────
+
+class DashboardPresence(models.Model):
+    _name = "dashboard.presence"
+    _description = "Dashboard Live Presence (who currently has it open)"
+    _rec_name = "user_id"
+
+    user_id = fields.Many2one('res.users', required=True, ondelete='cascade')
+    last_seen = fields.Datetime(required=True)
+
+    _sql_constraints = [
+        ('user_uniq', 'unique(user_id)', 'User already has a presence row.')
+    ]
+
+
+class DashboardKpiComment(models.Model):
+    _name = "dashboard.kpi.comment"
+    _description = "Comment thread on a dashboard KPI card"
+    _order = "create_date desc"
+
+    kpi_key = fields.Char(required=True, index=True)
+    text = fields.Char(required=True)
+    user_id = fields.Many2one('res.users', default=lambda self: self.env.user, required=True)
+    create_date = fields.Datetime(readonly=True)
+
+
+class DashboardSnapshotLink(models.Model):
+    _name = "dashboard.snapshot.link"
+    _description = "Shareable read-only dashboard snapshot link"
+
+    token = fields.Char(required=True, index=True, default=lambda self: uuid.uuid4().hex)
+    created_by = fields.Many2one('res.users', default=lambda self: self.env.user)
+    expires_at = fields.Datetime(required=True)
+    snapshot_data = fields.Text()  # JSON blob captured at creation time
+
+    _sql_constraints = [
+        ('token_uniq', 'unique(token)', 'Token collision, try again.')
+    ]

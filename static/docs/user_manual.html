@@ -1,17 +1,45 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Eagle Business Dashboard User Manual v1.0.33</title><style>body{font-family:Arial,sans-serif;line-height:1.55;margin:40px;max-width:1100px;color:#222}h1,h2,h3{color:#18203a}code{background:#f3f4f6;padding:2px 4px}.note{background:#f8fafc;border-left:4px solid #64748b;padding:10px 14px}</style></head><body>
-<h1>Eagle Business Dashboard — User Manual v1.0.33</h1>
-<p>This document describes the user-visible functions and normal operating behavior of the module for Odoo 18.</p>
-<h2>Navigation</h2><p>Use <b>Business Dashboard → Dashboard</b> to access the Operation, Business, and Finance dashboards. The Operation dashboard is the default dashboard.</p>
-<h2>Operation Dashboard</h2><p>The Operation dashboard contains Sales, Purchases, Quotations, RFQ, and Transactions. Each table can be folded/unfolded. Table headers can be used for presentation sorting. Record references and partners open their related Odoo records.</p>
-<h2>Operation Dashboard Quick Sale</h2><p>The floating <b>+</b> button opens the Quick Sale dialog. The dialog is separate from the dashboard display so typing into the Product field does not re-render the dashboard.</p>
-<h3>Product search</h3><p>Type at least two characters. Search results are retrieved from Odoo and can be selected by clicking a result. Search matches product name, internal reference, or barcode. The result list is limited to the first 30 matches for the current query.</p>
-<p>Keyboard controls: <b>Arrow Down</b>/<b>Arrow Up</b> move through results; <b>Enter</b> selects the highlighted result; <b>Esc</b> closes the result list or dialog.</p>
-<h3>Order creation</h3><p>Select a product, enter a quantity greater than zero, optionally select a partner, and choose <b>Create Order</b>. Odoo creates or updates a draft sales order according to the module's Quick Sale rules, then the order opens for review.</p>
-<h2>Finance Dashboard</h2><p>The Finance dashboard contains invoices, vendor bills, transactions, journal balances, journal balance summary, transfers, reconciliation information, and related financial controls. Financial sections may be folded by default.</p>
-<h2>Ledger Balance Security</h2><p>When a journal is configured to mask balances, Previous and New Balance values are hidden from users who are not explicitly approved for that journal. Deposit, Withdraw, and Change remain available for transfer monitoring. Approval for a protected journal is separate from the user's administrator role.</p>
-<h2>Partial Cash Balance Display</h2><p>For a user who is not approved to view one or more protected ledgers, Cash Balance, Opening, and Balance show only the unprotected portion when other visible ledger contributions remain. The visible amount is followed by <strong>*</strong>. If all contributing ledger accounts are protected, the aggregate remains masked. In and Out movement totals remain visible for transfer checking.</p><h2>Printing and Export</h2><p>Finance reports and CSV exports apply the same ledger-balance masking rule used by the dashboard. Operation Dashboard printing is controlled through its print wizard.</p>
-<h2>Payment Form</h2><p>The standard Odoo payment form uses a light red background for Send/Outbound and a light green background for Receive/Inbound. The tint follows the live Payment Type control and is presentation only.</p>
-<h2>Customization</h2><p>Where enabled, users can customize dashboard density, sections, refresh behavior, theme, and workspace. Administrator-controlled security rules take precedence over personal visibility settings.</p>
-<h2>Quick Sale Search Troubleshooting</h2><div class="note"><p>After a module upgrade, restart Odoo and perform a hard browser refresh (<code>Ctrl+Shift+R</code>). If Product search still fails, check the browser console and the Odoo server log for errors from <code>dashboard.data.get_product_options</code>.</p></div>
-<h2>Data and Security</h2><p>The dashboard is a presentation and navigation layer over Odoo. It does not replace Odoo's native accounting, sales, purchasing, or inventory workflows.</p>
-<h2>Quick Sale</h2><p>Quick Sale is a standalone dialog. Partner selection uses server-side type-ahead search by partner name, reference, email, or phone. Product selection uses server-side type-ahead search by product name, internal reference, or barcode. Search results are bounded and clickable. The Create / Add to Order action remains visible after product selection and submits the selected product and quantity to the server.</p><p><b>Quick Sale action controls:</b> Cancel and Create Order are created programmatically with isolated styling so both remain visible and clickable regardless of generic Odoo button styling.</p><section><h2>Quick Sale actions</h2><p>The primary Create Order action and Cancel action are rendered inside the visible Quick Sale form body. They do not depend on the Odoo modal footer. The primary action is available after a valid product selection and remains visible during search and validation states.</p></section><h2>Operation Dashboard document actions</h2><p>Sales and Purchase headers include New actions and print-wizard actions. The Sales print wizard covers Sales Orders and Quotations. The Purchase print wizard covers Purchase Orders and RFQs. The Quotations and RFQ cards no longer have separate print/export buttons.</p><h2>Operation Dashboard transactions</h2><p>The Transactions header provides Receive and Send actions. Receive opens a new inbound Odoo payment and Send opens a new outbound Odoo payment. These actions create standard Odoo payment forms and do not post or confirm them automatically.</p><h2>Payment form direction theme v1.0.33</h2><p>The standard <code>account.payment</code> form is tinted light red for Send/Outbound and light green for Receive/Inbound. The primary implementation is CSS-based and reacts directly to the checked <code>payment_type</code> radio, with a minimal JavaScript fallback for DOM variants. This does not change payment or accounting behavior.</p><h2>Transaction CSV export v1.0.35</h2><p>The Operation Dashboard transaction CSV includes separate Receive and Send columns. Receive contains inbound payment amounts and Send contains outbound payment amounts. Transaction print tables use the same separate columns. The exporter no longer combines the two directions into a single Amount column.</p><section><h2>Transaction columns v1.0.35</h2><p>Transaction tables and transaction CSV/print outputs use separate <strong>Receive</strong> and <strong>Send</strong> columns. Receive contains inbound payment amounts; Send contains outbound payment amounts. A transaction has a value in the applicable direction column and zero/blank in the other direction, according to the source data.</p></section></body></html>
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Eagle Business Dashboard — User Manual v1.0.11.4</title>
+<style>body{font-family:Arial,sans-serif;line-height:1.5;margin:40px;color:#222}h1,h2{color:#18203a}code{background:#f4f4f4;padding:2px 4px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:7px;text-align:right}th:first-child,td:first-child{text-align:left}</style></head>
+<body>
+<p style="font-size:11px;color:#6b7280">Module release: 18.0.10.11.5</p>
+<h1>Eagle Business Dashboard — User Manual v1.0.11.4</h1>
+<p><strong>v1.0.11.4 runtime fix:</strong> Ledger Balance Security settings now load correctly in Odoo 18 Finance Dashboard. This release does not change the masking rules or amounts shown.</p>
+<p>This document describes the functions and operating behavior of the Eagle Business Dashboard for Odoo 18.</p>
+<h2>Navigation</h2>
+<p>Use <b>Business Dashboard → Dashboard</b> to access Business, Finance, and Operations. The Finance dashboard contains invoices, vendor bills, transactions, Journal Balance, Journal Balance Summary, transfers, reconciliation information, cash-flow information, and related finance panels.</p>
+<h2>Journal Balance</h2>
+<p>The Journal Balance table contains Journal, Previous Balance, Deposit, Withdraw, Change, and New Balance. The table can be folded/unfolded. Journal rows can expose their related payment transactions when expanded.</p>
+<h2>Ledger Balance Security</h2>
+<p>Ledger Balance Security controls the visibility of the Previous and New Balance values for individual bank and cash journals.</p>
+<p>For a journal with <b>Mask balances</b> enabled, a user must be explicitly listed under <b>Approved Users</b> to see that journal's balance. Dashboard Admin and System Administrator status grants permission to configure the security rule; it does not automatically bypass the rule.</p>
+<p>For an unauthorized user, the journal's Previous and New Balance are masked. Deposit, Withdraw, and Change remain visible.</p>
+<h2>Cash Flow Aggregate With Protected Ledgers</h2>
+<p>The Finance Dashboard Cash Flow card uses the same journal-level visibility rules. When some, but not all, contributing bank/cash ledgers are protected, the dashboard shows the <b>visible aggregate only</b> for <b>Opening</b> and <b>Balance</b>, followed by an asterisk (<b>*</b>).</p>
+<p>For example, if the real aggregate is BDT 100,000 and BDT 10,000 belongs to protected ledgers, an unauthorized user sees <b>BDT 90,000*</b>. The protected amount is not sent to the browser.</p>
+<table><thead><tr><th>Situation</th><th>Displayed Opening / Balance</th></tr></thead><tbody>
+<tr><td>No protected contributing ledger</td><td>Full value</td></tr>
+<tr><td>Some protected contributing ledgers</td><td>Visible value*</td></tr>
+<tr><td>All contributing ledgers protected</td><td>••••••</td></tr>
+</tbody></table>
+<p>The asterisk means: <b>some protected values are excluded</b>. In and Out remain visible as cash-movement totals for transfer checking.</p>
+<h2>Configuring a Journal</h2>
+<p>Open <b>Business Dashboard → Dashboard → Finance → Ledger Balance Security</b>. Select a journal, enable <b>Mask balances</b>, select the users who may see the balance, and save the configuration.</p>
+<h2>Testing</h2>
+<p>Use a non-administrator account that is not listed as an Approved User to verify masking. Use a second account that is explicitly approved to verify unmasked visibility. To verify partial aggregate masking, protect one contributing journal and leave at least one other contributing journal visible.</p>
+<h2>Printing and Export</h2>
+<p>Journal Balance printing and CSV export apply the same user-specific ledger visibility rule.</p>
+<h2>Dashboard Tables</h2>
+<p>Dashboard tables support folding/unfolding and sorting of displayed columns where table controls are available.</p>
+<h2>Quick Order</h2>
+<p>Quick Order searches the product catalog on the server by product name, internal reference, and barcode.</p>
+<h2>Dashboard Role Assignment</h2>
+<p>Dashboard roles are assigned per Odoo user. Open <b>Settings → Users &amp; Companies → Users</b>, open the user, and use the <b>Access Rights</b> tab. The <b>Business Dashboard</b> section contains <b>Dashboard Admin</b>, <b>Dashboard Manager</b>, and <b>Dashboard User</b>.</p>
+<h2>Customization</h2>
+<p>User preferences can control layout density, theme settings, visible sections, refresh interval, and related display options. Administrator security restrictions take precedence over personal visibility preferences.</p>
+<h2>Updates</h2>
+<p>After upgrading the module, restart Odoo when required and refresh the browser assets with a hard refresh.</p>
+<h2>Payment Form Appearance</h2>
+<p><code>static/src/js/payment_form_theme.js</code> applies presentation-only styling to Odoo 18 payment forms. The styling does not provide any security boundary.</p>
+<section><h2>Sales Trend Graph</h2><p>The Sales Trend section is displayed as an interactive graph. Use the <strong>View by</strong> controls to group the visible sales data by <strong>Day</strong>, <strong>Week</strong>, <strong>Month</strong>, <strong>Quarter</strong>, or <strong>Year</strong>. The vertical axis scales automatically to the largest value in the selected data, and the horizontal axis labels adapt to the selected grouping. Point tooltips show the period and exact BDT amount.</p></section>
+</body></html>

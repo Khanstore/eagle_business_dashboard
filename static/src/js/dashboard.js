@@ -4,7 +4,6 @@ import { Component, onWillStart, onWillDestroy, onMounted, onPatched, useState }
 import { enhanceEagleTables } from "./table_tools";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
-import { EagleQuickSaleDialog } from "./quick_sale_dialog";
 
 class Dashboard extends Component {
     setup() {
@@ -30,7 +29,7 @@ class Dashboard extends Component {
             overdue_count:0, overdue_amount:0, due_soon_count:0, due_soon_amount:0,
             top_customers:[], month_sales:0, sales_target:0, low_stock:[],
             // Analytics
-            trend_data:[], aging:{ar:[],ap:[]},
+            trend_data:[], trendGranularity:'day', trendLoading:false, trendError:'', aging:{ar:[],ap:[]},
             operations:{pending_deliveries:[],mismatch:[],stock_value:0},
             customers:{new:0,returning:0,total:0,clv:[]},
             financial:{tax_collected:0,tax_paid:0,tax_net:0,unreconciled_count:0,
@@ -54,8 +53,6 @@ class Dashboard extends Component {
             ultimateOpen:false, ultimateTablesOpen:{salespeople:false,margin_watch:false,returns:false,customer_risk:false,reconciliation:false,data_quality:false,approvals:false},
             // Visibility & access
             role:'user', visibility:{}, section_labels:{}, all_defaults:{},
-            dataTotals:{quotations:0,orders:0,purchases:0,rfq:0,transactions:0},
-            dataPageLimits:{orders:100,purchases:100,transactions:200,lines:30},
             // Filters
             from_date:sharedFilterState.from_date, to_date:sharedFilterState.to_date,
             partner_filter:sharedFilterState.partner_filter,
@@ -104,12 +101,11 @@ class Dashboard extends Component {
             showKpiComments:false, activeKpiKey:'', activeKpiLabel:'', kpiComments:[], newCommentText:'',
             showShareModal:false, shareUrl:'',
             savedFilters:[], showSaveFilterPrompt:false, filterNameInput:'',
-            quickSaleLastResult:'',
+            showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSalePartnerSearch:'', quickSaleProductSearch:'', quickSaleQty:1,
             validatingPaymentId:0,
-            
+            productOptions:[], quickSaleError:'', quickSaleSubmitting:false, quickSaleLastResult:'',
+            quickSaleProductSearchSeq:0, quickSaleProductSearchTimer:null,
         });
-
-        this._quickSaleDialog = null;
 
         this._orderLines    = {};
         this._purchaseLines = {};
@@ -122,19 +118,13 @@ class Dashboard extends Component {
         try { this.state.darkMode = localStorage.getItem('eagle_dark_mode') === '1'; } catch(e) {}
         try { this.state.recentlyViewed = JSON.parse(localStorage.getItem('eagle_recent_business') || '[]'); } catch(e) {}
 
-
         onWillStart(async () => {
-            // Keep first paint small. Heavy analytics are loaded after the core
-            // dashboard is visible so large databases do not block the browser.
             await this.loadUserPreferences();
             await this.loadAll();
             await this.loadSavedFilters();
+            await this.loadAttractivePack();
         });
         onMounted(() => {
-            queueMicrotask(() => {
-                this.loadAttractivePack();
-                this.loadDeferredAnalytics();
-            });
             this._injectPwaManifest();
             this._keydownHandler = (ev) => this._onKeyDown(ev);
             window.addEventListener('keydown', this._keydownHandler);
@@ -147,7 +137,6 @@ class Dashboard extends Component {
             enhanceEagleTables(this.el, 'business');
         });
         onWillDestroy(() => {
-            if (this._quickSaleDialog) this._quickSaleDialog.close();
             this._stopRefresh();
             if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
             if (this._keydownHandler) window.removeEventListener('keydown', this._keydownHandler);
@@ -226,11 +215,19 @@ class Dashboard extends Component {
         this.state.loading = true;
         this._loadErrors = [];
         try {
-            const [data, widgets, vis, company] = await Promise.all([
-                this._safeRpc("dashboard.data","get_dashboard",[this.state.from_date||false,this.state.to_date||false],{quotations:[],orders:[],purchases:[],rfq:[],transactions:[],total_counts:{}},'Core data'),
+            const [data, widgets, vis, trend, aging, ops, cust, fin, notes, company, stage23, control] = await Promise.all([
+                this._safeRpc("dashboard.data","get_dashboard",[this.state.from_date||false,this.state.to_date||false],{quotations:[],orders:[],purchases:[],rfq:[],transactions:[]},'Core data'),
                 this._safeRpc("dashboard.data","get_business_widgets",[],{overdue_count:0,overdue_amount:0,due_soon_count:0,due_soon_amount:0,top_customers:[],month_sales:0,sales_target:0,low_stock:[]},'Business KPIs'),
                 this._safeRpc("dashboard.data","get_visibility",[],{role:this.state.role,visibility:{},section_labels:{},all_defaults:{}},'Visibility'),
+                this._safeRpc("dashboard.data","get_trend_data",[this.state.from_date||false,this.state.to_date||false,'sale',this.state.trendGranularity||'day'],[],'Trend'),
+                this._safeRpc("dashboard.data","get_aging_report",[],{ar:[],ap:[]},'Aging'),
+                this._safeRpc("dashboard.data","get_operations_data",[],{pending_deliveries:[],mismatch:[],stock_value:0},'Operations'),
+                this._safeRpc("dashboard.data","get_customer_intelligence",[this.state.from_date||false,this.state.to_date||false],{new:0,returning:0,total:0,clv:[]},'Customers'),
+                this._safeRpc("dashboard.data","get_financial_controls",[this.state.from_date||false,this.state.to_date||false],{},'Financial controls'),
+                this._safeRpc("dashboard.data","get_team_notes",[],this.state.teamNotes||'','Team notes'),
                 this._safeRpc("dashboard.data","get_company_info",[],{name:'',id:0},'Company'),
+                this._safeRpc("dashboard.data","get_management_insights",[this.state.from_date||false,this.state.to_date||false,this.state.dailyClosingDate||false],{},'Management analytics'),
+                this._safeRpc("dashboard.data","get_control_center",[this.state.from_date||false,this.state.to_date||false],{},'Control center'),
             ]);
 
             this._orderLines={}; this._purchaseLines={};
@@ -246,6 +243,17 @@ class Dashboard extends Component {
                 due_soon_count:widgets.due_soon_count, due_soon_amount:widgets.due_soon_amount,
                 top_customers:widgets.top_customers, month_sales:widgets.month_sales,
                 sales_target:widgets.sales_target, low_stock:widgets.low_stock,
+                trend_data: trend||[], aging: aging||{ar:[],ap:[]},
+                operations: ops||{pending_deliveries:[],mismatch:[],stock_value:0},
+                customers:  cust||{new:0,returning:0,total:0,clv:[]},
+                financial:  fin||{},
+                management:  stage23 ? (stage23.sales_performance ? {sales_performance: stage23.sales_performance, product_profitability: stage23.product_profitability||[], inventory_risk: stage23.inventory_risk||[]} : {sales_performance:{}, product_profitability:[], inventory_risk:[]}) : {sales_performance:{},product_profitability:[],inventory_risk:[]},
+                warehouseComparison: stage23 ? (stage23.warehouse_comparison||[]) : [],
+                dailyClosing: stage23 ? (stage23.daily_closing||this.state.dailyClosing) : this.state.dailyClosing,
+                actionCenter: control && control.action_center ? control.action_center : this.state.actionCenter,
+                // Stage 4 control-center payload now also contains Stage 5.
+                ultimate: control && control.ultimate ? control.ultimate : this.state.ultimate,
+                executive: control && control.executive ? control.executive : this.state.executive,
                 role:       vis.role,
                 visibility: vis.visibility||{},
                 section_labels: vis.section_labels||{},
@@ -253,8 +261,6 @@ class Dashboard extends Component {
                 teamNotes:      notes||'',
                 companyName:    company ? company.name : '',
                 companyId:      company ? company.id : 0,
-                dataTotals: Object.assign({}, this.state.dataTotals, data.total_counts || {}),
-                dataPageLimits: Object.assign({}, this.state.dataPageLimits, data.page_limits || {}),
             });
 
             const pm={};
@@ -278,35 +284,6 @@ class Dashboard extends Component {
             this.state.loadErrors = [...new Set(this._loadErrors || [])];
             this.state.lastUpdated = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
             this.state.loading = false;
-        }
-    }
-
-    async loadDeferredAnalytics() {
-        try {
-            const [trend, aging, ops, cust, fin, notes, stage23, control] = await Promise.all([
-                this._safeRpc("dashboard.data","get_trend_data",[this.state.from_date||false,this.state.to_date||false,'sale'],[],'Trend'),
-                this._safeRpc("dashboard.data","get_aging_report",[],{ar:[],ap:[]},'Aging'),
-                this._safeRpc("dashboard.data","get_operations_data",[],{pending_deliveries:[],mismatch:[],stock_value:0},'Operations'),
-                this._safeRpc("dashboard.data","get_customer_intelligence",[this.state.from_date||false,this.state.to_date||false],{new:0,returning:0,total:0,clv:[]},'Customers'),
-                this._safeRpc("dashboard.data","get_financial_controls",[this.state.from_date||false,this.state.to_date||false],{},'Financial controls'),
-                this._safeRpc("dashboard.data","get_team_notes",[],this.state.teamNotes||'','Team notes'),
-                this._safeRpc("dashboard.data","get_management_insights",[this.state.from_date||false,this.state.to_date||false,this.state.dailyClosingDate||false],{},'Management analytics'),
-                this._safeRpc("dashboard.data","get_control_center",[this.state.from_date||false,this.state.to_date||false],{},'Control center'),
-            ]);
-            Object.assign(this.state, {
-                trend_data: trend||[], aging: aging||{ar:[],ap:[]},
-                operations: ops||{pending_deliveries:[],mismatch:[],stock_value:0},
-                customers: cust||{new:0,returning:0,total:0,clv:[]},
-                financial: fin||{}, teamNotes: notes||this.state.teamNotes,
-                management: stage23 ? (stage23.sales_performance ? {sales_performance: stage23.sales_performance, product_profitability: stage23.product_profitability||[], inventory_risk: stage23.inventory_risk||[]} : this.state.management) : this.state.management,
-                warehouseComparison: stage23 ? (stage23.warehouse_comparison||[]) : this.state.warehouseComparison,
-                dailyClosing: stage23 ? (stage23.daily_closing||this.state.dailyClosing) : this.state.dailyClosing,
-                actionCenter: control && control.action_center ? control.action_center : this.state.actionCenter,
-                ultimate: control && control.ultimate ? control.ultimate : this.state.ultimate,
-                executive: control && control.executive ? control.executive : this.state.executive,
-            });
-        } catch (e) {
-            console.error('Deferred dashboard analytics error:', e);
         }
     }
 
@@ -357,11 +334,6 @@ class Dashboard extends Component {
     get filteredQuotations()   { return this.state.quotations.filter(r=>this._ok(r)); }
     get filteredRfq()          { return this.state.rfq.filter(r=>this._ok(r)); }
     get filteredTransactions() { return this.state.transactions.filter(r=>this._ok(r)); }
-    get ordersCount() { return this.state.dataTotals.orders || this.state.orders.length; }
-    get quotationsCount() { return this.state.dataTotals.quotations || this.state.quotations.length; }
-    get purchasesCount() { return this.state.dataTotals.purchases || this.state.purchases.length; }
-    get rfqCount() { return this.state.dataTotals.rfq || this.state.rfq.length; }
-    get transactionsCount() { return this.state.dataTotals.transactions || this.state.transactions.length; }
 
     formatAmount(value) { const n=parseFloat(value); return Number.isFinite(n) ? n.toFixed(2) : '0.00'; }
     getSectionLabelEntries() { return Object.entries(this.state.section_labels || {}); }
@@ -477,10 +449,129 @@ class Dashboard extends Component {
     get animDueSoonCount()  { return this.state.animCounters.due_soon_count !== undefined ? this.state.animCounters.due_soon_count : this.state.due_soon_count; }
     get animMonthSales()    { return this.state.animCounters.month_sales !== undefined ? this.state.animCounters.month_sales : Math.round(this.state.month_sales); }
 
-    // ── Trend chart max (kept in JS since OWL doesn't support spread syntax) ──
-    get trendMax() {
-        const vals = this.state.trend_data.map(d => d.amount);
-        return vals.length ? Math.max.apply(null, vals.concat([1])) : 1;
+    // ── Sales trend graph ────────────────────────────────────────────────
+    get trendPeriods() {
+        return [
+            {key:'day', label:'Day'},
+            {key:'week', label:'Week'},
+            {key:'month', label:'Month'},
+            {key:'quarter', label:'Quarter'},
+            {key:'year', label:'Year'},
+        ];
+    }
+    setTrendGranularity(granularity) {
+        if (!['day','week','month','quarter','year'].includes(granularity)) return;
+        if (this.state.trendGranularity === granularity) return;
+        this.state.trendGranularity = granularity;
+        this.loadAll();
+    }
+    get trendChartWidth() { return 820; }
+    get trendChartHeight() { return 300; }
+    get trendPlotLeft() { return 58; }
+    get trendPlotRight() { return 18; }
+    get trendPlotTop() { return 18; }
+    get trendPlotBottom() { return 48; }
+    get trendPlotWidth() { return this.trendChartWidth - this.trendPlotLeft - this.trendPlotRight; }
+    get trendPlotHeight() { return this.trendChartHeight - this.trendPlotTop - this.trendPlotBottom; }
+    get trendAmounts() { return (this.state.trend_data || []).map(d => Number(d.amount) || 0); }
+    get trendRawMax() {
+        const vals = this.trendAmounts;
+        return vals.length ? Math.max.apply(null, vals.concat([0])) : 0;
+    }
+    _niceStep(value) {
+        if (value <= 0) return 1;
+        const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+        const normalized = value / magnitude;
+        const base = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+        return base * magnitude;
+    }
+    get trendYMax() {
+        const raw = this.trendRawMax;
+        if (!raw) return 1;
+        const step = this._niceStep(raw / 5);
+        return Math.max(step, Math.ceil(raw / step) * step);
+    }
+    get trendYTicks() {
+        const max = this.trendYMax;
+        const ticks = [];
+        for (let i=0; i<=5; i++) {
+            const value = max * (1 - i / 5);
+            ticks.push({key:`y${i}`, value, y:this.trendPlotTop + (this.trendPlotHeight * i / 5)});
+        }
+        return ticks;
+    }
+    _trendDate(iso) {
+        const p = String(iso || '').split('-').map(Number);
+        return p.length === 3 && p[0] && p[1] && p[2] ? new Date(p[0], p[1]-1, p[2]) : null;
+    }
+    _isoWeekNumber(date) {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const day = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - day);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+    trendAxisLabel(iso) {
+        const d = this._trendDate(iso);
+        if (!d) return String(iso || '');
+        const g = this.state.trendGranularity;
+        const month = d.toLocaleString('default', {month:'short'});
+        const year = d.getFullYear();
+        if (g === 'day') return `${month} ${String(d.getDate()).padStart(2,'0')}`;
+        if (g === 'week') return `W${this._isoWeekNumber(d)} · ${month} ${String(d.getDate()).padStart(2,'0')}`;
+        if (g === 'month') return `${month} ${year}`;
+        if (g === 'quarter') return `Q${Math.floor(d.getMonth()/3)+1} ${year}`;
+        return String(year);
+    }
+    trendFullLabel(iso) {
+        const d = this._trendDate(iso);
+        if (!d) return String(iso || '');
+        const month = d.toLocaleString('default', {month:'long'});
+        const year = d.getFullYear();
+        if (this.state.trendGranularity === 'day') return `${month} ${d.getDate()}, ${year}`;
+        if (this.state.trendGranularity === 'week') return `Week ${this._isoWeekNumber(d)}, starting ${month} ${d.getDate()}, ${year}`;
+        if (this.state.trendGranularity === 'month') return `${month} ${year}`;
+        if (this.state.trendGranularity === 'quarter') return `Q${Math.floor(d.getMonth()/3)+1} ${year}`;
+        return String(year);
+    }
+    formatTrendCompact(value) {
+        const n = Number(value) || 0;
+        const a = Math.abs(n);
+        if (a >= 1000000000) return `${(n/1000000000).toFixed(1)}B`;
+        if (a >= 1000000) return `${(n/1000000).toFixed(1)}M`;
+        if (a >= 1000) return `${(n/1000).toFixed(a >= 10000 ? 0 : 1)}K`;
+        return n.toFixed(0);
+    }
+    get trendChartPoints() {
+        const data = this.state.trend_data || [];
+        if (!data.length) return [];
+        const max = this.trendYMax || 1;
+        const denom = Math.max(data.length - 1, 1);
+        return data.map((d, index) => {
+            const amount = Number(d.amount) || 0;
+            const x = this.trendPlotLeft + (index / denom) * this.trendPlotWidth;
+            const y = this.trendPlotTop + this.trendPlotHeight - (amount / max) * this.trendPlotHeight;
+            return {key:`${d.date}_${index}`, date:d.date, amount, x, y, label:this.trendAxisLabel(d.date), fullLabel:this.trendFullLabel(d.date)};
+        });
+    }
+    get trendPolyline() { return this.trendChartPoints.map(p => `${p.x},${p.y}`).join(' '); }
+    get trendAreaPoints() {
+        const pts = this.trendChartPoints;
+        if (!pts.length) return '';
+        const bottom = this.trendPlotTop + this.trendPlotHeight;
+        return `${pts[0].x},${bottom} ${pts.map(p => `${p.x},${p.y}`).join(' ')} ${pts[pts.length-1].x},${bottom}`;
+    }
+    shouldShowTrendXLabel(index) {
+        const n = this.trendChartPoints.length;
+        if (n <= 10) return true;
+        if (n <= 20) return index % 2 === 0 || index === n-1;
+        const step = Math.ceil(n / 8);
+        return index % step === 0 || index === n-1;
+    }
+    get trendSummary() {
+        const n = (this.state.trend_data || []).length;
+        const total = this.trendAmounts.reduce((s, v) => s + v, 0);
+        return {points:n, total};
     }
 
     // ── Sales target progress ─────────────────────────────────────────────
@@ -619,7 +710,7 @@ class Dashboard extends Component {
     doExport(includeLines){
         const type=this.state.exportPromptType; this.state.showExportPrompt=false;
         const fmt=v=>{const n=parseFloat(v);return isNaN(n)?'':n.toFixed(2);};
-        if(type==='transactions'){this._writeCSV(this.filteredTransactions.map(r=>({'Reference':r.name,'Partner':r.partner,'Date':r.date,'Ledger':r.ledger,'Receive':fmt(r.received),'Send':fmt(r.paid),'Status':r.state})),'transactions.csv');return;}
+        if(type==='transactions'){this._writeCSV(this.filteredTransactions.map(r=>({'Reference':r.name,'Partner':r.partner,'Date':r.date,'Ledger':r.ledger,'Received':fmt(r.received),'Paid':fmt(r.paid),'Status':r.state})),'transactions.csv');return;}
         const ds={orders:{records:this.filteredOrders,lineCache:this._orderLines,file:'orders.csv',extraCol:'Invoice Status',extraField:'invoice_status'},quotations:{records:this.filteredQuotations,lineCache:this._orderLines,file:'quotations.csv',extraCol:null},purchases:{records:this.filteredPurchases,lineCache:this._purchaseLines,file:'purchases.csv',extraCol:'Billing Status',extraField:'billing_status'},rfq:{records:this.filteredRfq,lineCache:this._purchaseLines,file:'rfq.csv',extraCol:null}};
         const d=ds[type]; const csvRows=[];
         for(const r of d.records){
@@ -660,7 +751,7 @@ class Dashboard extends Component {
         const buildTable=(records,cols,includeLines)=>{if(!records.length)return'<p style="color:#888;font-size:12px">No records.</p>';const ths=cols.map(c=>`<th style="background:#1a1f36;color:#fff;padding:8px 12px;font-size:11px;text-align:left">${c.label}</th>`).join('');let html=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px"><thead><tr>${ths}</tr></thead><tbody>`;for(const r of records){const tds=cols.map(c=>`<td style="padding:7px 12px;border-bottom:1px solid #e5e7eb">${c.val(r)}</td>`).join('');html+=`<tr style="background:#fff">${tds}</tr>`;if(includeLines&&r.lines&&r.lines.length){const lh=['Product','Qty','Rate','Disc%','Tax','Total'].map(h=>`<th style="background:#f1f5f9;padding:4px 8px;font-size:10px;text-align:left">${h}</th>`).join('');const lb=r.lines.map(l=>`<tr><td style="padding:4px 8px;font-size:10px">${l.product}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.qty)}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.price_unit)}</td><td style="padding:4px 8px;font-size:10px;text-align:right">${fmt(l.discount)}</td><td style="padding:4px 8px;font-size:10px">${l.tax}</td><td style="padding:4px 8px;font-size:10px;text-align:right;font-weight:700">${fmt(l.subtotal)}</td></tr>`).join('');html+=`<tr><td colspan="${cols.length}" style="padding:2px 24px 10px"><table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb"><thead><tr>${lh}</tr></thead><tbody>${lb}</tbody></table></td></tr>`;}}return html+'</tbody></table>';};
         const ordCols=[{label:'Reference',val:r=>r.name},{label:'Partner',val:r=>r.partner},{label:'Date',val:r=>r.date},{label:'Status',val:r=>r.status},{label:'Inv.Status',val:r=>r.invoice_status||''},{label:'Amount',val:r=>fmt(r.amount)}];
         const purCols=[{label:'Reference',val:r=>r.name},{label:'Partner',val:r=>r.partner},{label:'Date',val:r=>r.date},{label:'Status',val:r=>r.status},{label:'Bill Status',val:r=>r.billing_status||''},{label:'Amount',val:r=>fmt(r.amount)}];
-        const txCols=[{label:'Reference',val:r=>r.name},{label:'Partner',val:r=>r.partner},{label:'Date',val:r=>r.date},{label:'Ledger',val:r=>r.ledger},{label:'Receive',val:r=>fmt(r.received)},{label:'Send',val:r=>fmt(r.paid)},{label:'Status',val:r=>r.state}];
+        const txCols=[{label:'Reference',val:r=>r.name},{label:'Partner',val:r=>r.partner},{label:'Date',val:r=>r.date},{label:'Ledger',val:r=>r.ledger},{label:'Received',val:r=>fmt(r.received)},{label:'Paid',val:r=>fmt(r.paid)},{label:'Status',val:r=>r.state}];
         const pw=window.open('','_blank','width=1200,height=800');
         pw.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Business Dashboard</title>${styles}<style>body{margin:0;padding:20px;font-family:sans-serif}h1{font-size:20px;color:#1a1f36;margin:0 0 4px}h2{font-size:14px;font-weight:700;color:#1a1f36;margin:20px 0 8px;padding-bottom:4px;border-bottom:2px solid #1a1f36}.period{font-size:11px;color:#6b7280;margin-bottom:16px}@media print{@page{margin:10mm;size:A4 landscape}body{font-size:10px;padding:0}}</style></head><body>
         <h1>Business Dashboard</h1><div class="period">Period: ${this.state.from_date||'All'} — ${this.state.to_date||'All'}</div>
@@ -941,27 +1032,102 @@ class Dashboard extends Component {
     }
 
     // ── Quick Sale ────────────────────────────────────────────────────────
-    openQuickSale() {
-        if (!this._quickSaleDialog) {
-            this._quickSaleDialog = new EagleQuickSaleDialog({
-                orm: this.orm,
-                formatAmount: (value) => this.formatAmount(value),
-                partnerOptions: () => this.state.partnerOptions || [],
-                onCreated: async (res) => {
-                    this.state.quickSaleLastResult = res.merged
-                        ? `Added to existing draft order ${res.name}.`
-                        : `Created new order ${res.name}.`;
-                    this._openTab('sale.order', res.id);
-                    await this.loadAll();
-                    setTimeout(() => { this.state.quickSaleLastResult = ''; }, 5000);
-                },
-            });
+    async openQuickSale() {
+        this.state.quickSalePartner=''; this.state.quickSaleProduct='';
+        this.state.quickSalePartnerSearch=''; this.state.quickSaleProductSearch='';
+        this.state.quickSaleQty=1;
+        this.state.quickSaleError=''; this.state.quickSaleSubmitting=false;
+        this.state.showQuickSale=true;
+        await this.searchQuickSaleProducts('');
+    }
+    closeQuickSale() {
+        this.state.showQuickSale=false;
+        if (this.state.quickSaleProductSearchTimer) {
+            clearTimeout(this.state.quickSaleProductSearchTimer);
+            this.state.quickSaleProductSearchTimer = null;
         }
-        this._quickSaleDialog.open();
     }
 
-    closeQuickSale() {
-        if (this._quickSaleDialog) this._quickSaleDialog.close();
+    async searchQuickSaleProducts(search='') {
+        const seq = ++this.state.quickSaleProductSearchSeq;
+        try {
+            const results = await this.orm.call(
+                "dashboard.data", "get_product_options", [search || '']
+            );
+            if (seq !== this.state.quickSaleProductSearchSeq || !this.state.showQuickSale) return;
+            this.state.productOptions = results || [];
+        } catch(e) {
+            console.error("Failed to search products:", e);
+            if (seq === this.state.quickSaleProductSearchSeq) {
+                this.state.productOptions = [];
+                this.state.quickSaleError = 'Could not search products. Please try again.';
+            }
+        }
+    }
+
+    onQuickSalePartnerInput(ev) {
+        const value = (ev.target.value || '').trim();
+        this.state.quickSalePartnerSearch = value;
+        const match = value.match(/\[#(\d+)\]\s*$/);
+        this.state.quickSalePartner = match ? match[1] : '';
+        if (value === '— Walk-in customer —') this.state.quickSalePartner = '';
+    }
+
+    onQuickSaleProductInput(ev) {
+        const value = (ev.target.value || '').trim();
+        this.state.quickSaleProductSearch = value;
+        const match = value.match(/\[#(\d+)\]\s*$/);
+        this.state.quickSaleProduct = match ? match[1] : '';
+
+        // Search the entire server-side product catalog instead of a fixed
+        // browser-side list. Debouncing avoids an RPC for every keystroke.
+        if (this.state.quickSaleProductSearchTimer) {
+            clearTimeout(this.state.quickSaleProductSearchTimer);
+        }
+        this.state.quickSaleProductSearchTimer = setTimeout(() => {
+            this.searchQuickSaleProducts(value);
+            this.state.quickSaleProductSearchTimer = null;
+        }, 250);
+    }
+
+    async submitQuickSale() {
+        this.state.quickSaleError = '';
+        if (!this.state.quickSaleProduct) {
+            this.state.quickSaleError = 'Please select a product.';
+            return;
+        }
+        const qty = parseFloat(this.state.quickSaleQty);
+        if (!qty || qty <= 0) {
+            this.state.quickSaleError = 'Quantity must be greater than 0.';
+            return;
+        }
+        this.state.quickSaleSubmitting = true;
+        try {
+            const partnerId = this.state.quickSalePartner ? parseInt(this.state.quickSalePartner) : false;
+            const productId = parseInt(this.state.quickSaleProduct);
+            const res = await this.orm.call("dashboard.data","create_quick_sale",
+                [partnerId, productId, qty, false]);
+            if (res && res.error) {
+                this.state.quickSaleError = res.error;
+                return;
+            }
+            if (res && res.id) {
+                this.state.showQuickSale = false;
+                this.state.quickSaleLastResult = res.merged
+                    ? `Added to existing draft order ${res.name}.`
+                    : `Created new order ${res.name}.`;
+                this._openTab('sale.order', res.id);
+                await this.loadAll();
+                setTimeout(()=>{ this.state.quickSaleLastResult = ''; }, 5000);
+            } else {
+                this.state.quickSaleError = 'Something went wrong creating the order. Please try again.';
+            }
+        } catch(e) {
+            console.error("Quick sale failed:", e);
+            this.state.quickSaleError = 'Server error while creating the order.';
+        } finally {
+            this.state.quickSaleSubmitting = false;
+        }
     }
 
     // ── Dark mode ─────────────────────────────────────────────────────────

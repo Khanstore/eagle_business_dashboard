@@ -1,6 +1,6 @@
 {
     "name": "Advanced Business Dashboard",
-    "version": "18.0.10.35",
+    "version": "18.0.10.11.5",
     "author": "SM Ashraf",
     "depends": ["sale", "purchase", "account", "web", "stock", "mail"],
     "data": [
@@ -14,7 +14,6 @@
         "web.assets_backend": [
             "eagle_business_dashboard/static/src/js/shared_filter_state.js",
             "eagle_business_dashboard/static/src/js/table_tools.js",
-            "eagle_business_dashboard/static/src/js/quick_sale_dialog.js",
             "eagle_business_dashboard/static/src/js/dashboard.js",
             "eagle_business_dashboard/static/src/xml/dashboard.xml",
             "eagle_business_dashboard/static/src/css/dashboard.css",

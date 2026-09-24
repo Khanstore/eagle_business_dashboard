@@ -42,52 +42,14 @@
 .eagle-header-actions .eagle-header-action-btn i { color:inherit; }
 
 /* ── Payment form direction theme ───────────────────────────────────────── */
-/* Primary implementation: CSS reacts directly to the checked payment_type radio. */
-.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked),
-.o_form_view:has(input[type="radio"][value="outbound"]:checked) {
-  background:#fff1f2 !important;
-}
-.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked) .o_form_sheet_bg,
-.o_form_view:has(input[type="radio"][value="outbound"]:checked) .o_form_sheet_bg,
-.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked) .o_form_nosheet,
-.o_form_view:has(input[type="radio"][value="outbound"]:checked) .o_form_nosheet {
-  background:#fff1f2 !important;
-}
-.o_form_view:has(input[type="radio"][name="payment_type"][value="outbound"]:checked) .o_form_sheet,
-.o_form_view:has(input[type="radio"][value="outbound"]:checked) .o_form_sheet {
-  background:#fff7f8 !important;
-  box-shadow:inset 0 0 0 2px #fecdd3 !important;
-}
-.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked),
-.o_form_view:has(input[type="radio"][value="inbound"]:checked) {
-  background:#f0fdf4 !important;
-}
-.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked) .o_form_sheet_bg,
-.o_form_view:has(input[type="radio"][value="inbound"]:checked) .o_form_sheet_bg,
-.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked) .o_form_nosheet,
-.o_form_view:has(input[type="radio"][value="inbound"]:checked) .o_form_nosheet {
-  background:#f0fdf4 !important;
-}
-.o_form_view:has(input[type="radio"][name="payment_type"][value="inbound"]:checked) .o_form_sheet,
-.o_form_view:has(input[type="radio"][value="inbound"]:checked) .o_form_sheet {
-  background:#f7fff9 !important;
-  box-shadow:inset 0 0 0 2px #bbf7d0 !important;
-}
-/* Fallback classes for DOM variants where the radio is not under the form root. */
-body.eagle-payment-send-active .o_form_view.eagle-payment-form,
-body.eagle-payment-send-active .o_form_view { background:#fff1f2 !important; }
-body.eagle-payment-send-active .o_form_sheet_bg,
-body.eagle-payment-send-active .o_form_nosheet { background:#fff1f2 !important; }
-body.eagle-payment-send-active .o_form_sheet {
-  background:#fff7f8 !important; box-shadow:inset 0 0 0 2px #fecdd3 !important;
-}
-body.eagle-payment-receive-active .o_form_view.eagle-payment-form,
-body.eagle-payment-receive-active .o_form_view { background:#f0fdf4 !important; }
-body.eagle-payment-receive-active .o_form_sheet_bg,
-body.eagle-payment-receive-active .o_form_nosheet { background:#f0fdf4 !important; }
-body.eagle-payment-receive-active .o_form_sheet {
-  background:#f7fff9 !important; box-shadow:inset 0 0 0 2px #bbf7d0 !important;
-}
+/* Presentation only. Standard Odoo account.payment workflow and permissions
+   are unchanged. Send/outbound = light red; Receive/inbound = light green. */
+.eagle-payment-send-form,
+.eagle-payment-send-form .o_form_sheet_bg { background:#fff1f2 !important; }
+.eagle-payment-send-form .o_form_sheet { background:#fffafa !important; }
+.eagle-payment-receive-form,
+.eagle-payment-receive-form .o_form_sheet_bg { background:#f0fdf4 !important; }
+.eagle-payment-receive-form .o_form_sheet { background:#fbfffc !important; }
 
 /* ── KPI Cards ──────────────────────────────────────────────────────────── */
 .eagle-kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px; margin-bottom:20px; }
@@ -537,196 +499,27 @@ body.eagle-payment-receive-active .o_form_sheet {
 .dark .eagle-ledger-security-user-picker{background:#0f172a;border-color:#334155}
 .dark .eagle-ledger-security-user-option:hover{background:#1e293b}
 
-.eagle-page-title{
-    display:flex;
-    align-items:center;
-    gap:6px;
-    margin-left:24px;
-    margin-right:auto;
-    color:#ffffff;
-    font-size:18px;
-    font-weight:700;
-    letter-spacing:.1px;
-    white-space:nowrap;
-}
-.eagle-page-title i{opacity:.95}
-.eagle-app.dark .eagle-page-title{color:#ffffff}
-@media(max-width:900px){
-    .eagle-page-title{font-size:15px;margin-left:12px}
-}
-
-/* Operation Dashboard layout */
-.operation-two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:0}.operation-two-col .operation-table-card{margin-bottom:20px}@media(max-width:900px){.operation-two-col{grid-template-columns:1fr}}
-
-/* Quick Sale explicit product search results. Native datalist popovers cannot be
- * reliably reopened after asynchronous RPC results arrive in all browsers. */
-.eagle-quick-search-dropdown {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: calc(100% + 4px);
-    max-height: 280px;
-    overflow-y: auto;
-    z-index: 1200;
-    background: var(--eagle-surface, #fff);
-    border: 1px solid rgba(100, 116, 139, .28);
-    border-radius: 8px;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, .18);
-}
-.eagle-quick-search-option {
-    display: block;
-    width: 100%;
-    padding: 9px 12px;
-    text-align: left;
-    border: 0;
-    border-bottom: 1px solid rgba(100, 116, 139, .12);
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-}
-.eagle-quick-search-option:hover,
-.eagle-quick-search-option:focus {
-    background: rgba(79, 91, 213, .08);
-    outline: none;
-}
-.dark .eagle-quick-search-dropdown,
-.eagle-app.dark .eagle-quick-search-dropdown {
-    background: #18203a;
-    border-color: rgba(148, 163, 184, .28);
-}
-.dark .eagle-quick-search-option:hover,
-.eagle-app.dark .eagle-quick-search-option:hover {
-    background: rgba(99, 102, 241, .18);
-}
-.eagle-search-loading{display:flex;align-items:center;gap:6px;}
-.eagle-search-empty{color:#9ca3af;}
-
-/* Quick Sale standalone dialog: isolated from dashboard rendering and robust
- * against global Odoo button styles. */
-.eagle-quick-sale-backdrop{z-index:10050!important}
-.eagle-quick-sale-modal{max-width:620px!important;max-height:90vh}
-.eagle-quick-sale-modal .eagle-modal-footer.qs-footer{display:flex!important;justify-content:flex-end!important;align-items:center!important;gap:10px!important;visibility:visible!important;opacity:1!important}
-.eagle-quick-sale-modal .qs-create{display:inline-flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}
-.eagle-quick-sale-modal .qs-partner-list,.eagle-quick-sale-modal .qs-product-list{left:0;right:0;top:calc(100% + 4px)}
-.eagle-quick-sale-modal .qs-partner-status,.eagle-quick-sale-modal .qs-product-status{min-height:18px}
-.eagle-app.dark .eagle-quick-sale-modal .eagle-modal-body,
-.eagle-app.dark .eagle-quick-sale-modal .eagle-card-inner{background:#18203a;color:#e5e7eb}
-
-/* Quick Sale action controls: isolated from generic Odoo/dashboard button rules. */
-.eagle-quick-sale-modal .qs-footer {
-    min-height: 58px !important;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: flex-end !important;
-    gap: 10px !important;
-    padding: 12px 24px !important;
-    overflow: visible !important;
-    position: relative !important;
-    z-index: 5 !important;
-}
-.eagle-quick-sale-modal .eagle-qs-action {
-    appearance: none !important;
-    -webkit-appearance: none !important;
-    box-sizing: border-box !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    flex: 0 0 auto !important;
-    min-height: 40px !important;
-    padding: 9px 16px !important;
-    border-radius: 8px !important;
-    font: 600 14px/1.2 inherit !important;
-    cursor: pointer !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    position: relative !important;
-    z-index: 6 !important;
-}
-.eagle-quick-sale-modal .eagle-qs-cancel {
-    min-width: 92px !important;
-    background: #ffffff !important;
-    color: #374151 !important;
-    border: 1.5px solid #cbd5e1 !important;
-}
-.eagle-quick-sale-modal .eagle-qs-create {
-    min-width: 170px !important;
-    background: #4f46e5 !important;
-    color: #ffffff !important;
-    border: 1.5px solid #4f46e5 !important;
-}
-.eagle-quick-sale-modal .eagle-qs-create:disabled {
-    opacity: .7 !important;
-    cursor: wait !important;
-}
-.eagle-app.dark .eagle-quick-sale-modal .eagle-qs-cancel {
-    background: #232b45 !important;
-    color: #e5e7eb !important;
-    border-color: #4b587d !important;
-}
-
-/* Quick Sale fallback: action buttons are also present as static DOM nodes. */
-.eagle-quick-sale-modal .eagle-qs-action.eagle-qs-create,
-.eagle-quick-sale-modal .eagle-qs-action.eagle-qs-cancel {
-    display: inline-flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    flex: 0 0 auto !important;
-    position: relative !important;
-    z-index: 101 !important;
-}
-.eagle-quick-sale-modal .eagle-qs-action.eagle-qs-create {
-    min-width: 180px !important;
-    background: #4f46e5 !important;
-    color: #ffffff !important;
-    border: 1.5px solid #4f46e5 !important;
-}
-
-/* Quick Sale body action bar: keeps primary action inside the visible form body. */
-.eagle-quick-sale-modal .qs-body-actions {
-    display: flex !important;
-    flex-direction: row !important;
-    justify-content: flex-end !important;
-    align-items: center !important;
-    gap: 12px !important;
-    width: 100% !important;
-    min-height: 58px !important;
-    overflow: visible !important;
-    position: relative !important;
-    z-index: 2000 !important;
-}
-.eagle-quick-sale-modal .qs-body-actions .eagle-qs-action {
-    display: inline-flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    flex: 0 0 auto !important;
-    position: relative !important;
-    z-index: 2001 !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-.eagle-quick-sale-modal .qs-body-actions .eagle-qs-create {
-    min-width: 190px !important;
-    min-height: 42px !important;
-    background: #4f46e5 !important;
-    color: #ffffff !important;
-    border: 1.5px solid #4f46e5 !important;
-}
-.eagle-quick-sale-modal .qs-body-actions .eagle-qs-cancel {
-    min-width: 100px !important;
-    min-height: 42px !important;
-    background: #ffffff !important;
-    color: #374151 !important;
-    border: 1.5px solid #cbd5e1 !important;
-}
-.eagle-app.dark .eagle-quick-sale-modal .qs-body-actions .eagle-qs-cancel {
-    background: #232b45 !important;
-    color: #e5e7eb !important;
-    border-color: #4b587d !important;
-}
-@media(max-width:600px){
-    .eagle-quick-sale-modal .qs-body-actions { flex-direction: column-reverse !important; align-items: stretch !important; }
-    .eagle-quick-sale-modal .qs-body-actions .eagle-qs-action { width: 100% !important; }
+/* ══════════ SALES TREND VARIABLE-AXIS GRAPH ═══════════════════════════════ */
+.eagle-sales-trend-card { min-width:0; }
+.eagle-sales-trend-header { align-items:center; flex-wrap:wrap; gap:12px; }
+.eagle-trend-controls { display:flex; align-items:center; gap:3px; background:#f3f4f6; border-radius:10px; padding:3px; margin-left:auto; }
+.eagle-trend-label { font-size:11px; color:#6b7280; font-weight:600; padding:0 7px 0 8px; white-space:nowrap; }
+.eagle-trend-controls .eagle-period-btn { padding:5px 10px; font-size:11px; }
+.eagle-trend-summary { display:flex; gap:18px; align-items:center; padding:8px 20px 0; font-size:11px; color:#6b7280; }
+.eagle-trend-summary strong { color:#111827; font-weight:800; }
+.eagle-line-chart-wrap { padding-top:6px; }
+.eagle-line-chart-scroll { width:100%; overflow-x:auto; overflow-y:hidden; }
+.eagle-sales-line-chart { display:block; width:100%; min-width:560px; height:auto; overflow:visible; }
+.eagle-chart-grid { stroke:#e5e7eb; stroke-width:1; stroke-dasharray:3 4; }
+.eagle-chart-axis { stroke:#cbd5e1; stroke-width:1.2; }
+.eagle-chart-y-label, .eagle-chart-x-label { fill:#64748b; font-size:10px; font-family:inherit; }
+.eagle-chart-line { stroke:var(--eagle-accent,#4f5bd5); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
+.eagle-chart-area { fill:var(--eagle-accent,#4f5bd5); opacity:.10; }
+.eagle-chart-point { fill:#fff; stroke:var(--eagle-accent,#4f5bd5); stroke-width:2; vector-effect:non-scaling-stroke; cursor:pointer; transition:r .12s ease; }
+.eagle-chart-point:hover { r:6; }
+@media(max-width:720px){
+  .eagle-sales-trend-header { align-items:flex-start; }
+  .eagle-trend-controls { margin-left:0; width:100%; overflow-x:auto; }
+  .eagle-trend-controls .eagle-period-btn { flex:1 0 auto; }
+  .eagle-trend-summary { flex-wrap:wrap; gap:8px 16px; }
 }

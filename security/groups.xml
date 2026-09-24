@@ -1,20 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data>
-    <record id="group_dashboard_admin" model="res.groups">
-      <field name="name">Dashboard Admin</field>
-      <field name="category_id" ref="base.module_category_hidden"/>
-      <field name="comment">Full access: sees all sections, can configure visibility per group.</field>
+    <!-- Visible Business Dashboard application category. -->
+    <record id="module_category_business_dashboard" model="ir.module.category">
+      <field name="name">Business Dashboard</field>
+      <field name="description">Access roles for the Eagle Business Dashboard.</field>
+      <field name="sequence">35</field>
     </record>
-    <record id="group_dashboard_manager" model="res.groups">
-      <field name="name">Dashboard Manager</field>
-      <field name="category_id" ref="base.module_category_hidden"/>
-      <field name="comment">Can see KPIs, analytics, operations and customer sections.</field>
-    </record>
+
+    <!-- Base role. -->
     <record id="group_dashboard_user" model="res.groups">
       <field name="name">Dashboard User</field>
-      <field name="category_id" ref="base.module_category_hidden"/>
-      <field name="comment">Basic dashboard access: KPI cards and summary tables only.</field>
+      <field name="category_id" ref="module_category_business_dashboard"/>
+      <field name="comment">Basic dashboard access for operational users.</field>
     </record>
+
+    <!-- Manager includes User. Odoo can therefore render one Dashboard role selector. -->
+    <record id="group_dashboard_manager" model="res.groups">
+      <field name="name">Dashboard Manager</field>
+      <field name="category_id" ref="module_category_business_dashboard"/>
+      <field name="implied_ids" eval="[(4, ref('eagle_business_dashboard.group_dashboard_user'))]"/>
+      <field name="comment">Management access to dashboard analytics and controls.</field>
+    </record>
+
+    <!-- Admin includes Manager, which transitively includes User. -->
+    <record id="group_dashboard_admin" model="res.groups">
+      <field name="name">Dashboard Admin</field>
+      <field name="category_id" ref="module_category_business_dashboard"/>
+      <field name="implied_ids" eval="[(4, ref('eagle_business_dashboard.group_dashboard_manager'))]"/>
+      <field name="comment">Full dashboard access and dashboard configuration.</field>
+    </record>
+
+    <!-- Odoo generates the Access Rights group fields from res.groups. Rebuild that generated view
+         explicitly so existing installations expose all three Dashboard roles after upgrade. -->
+    <function model="res.groups" name="_update_user_groups_view"/>
   </data>
 </odoo>
