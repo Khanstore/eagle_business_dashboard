@@ -132,7 +132,7 @@
             <t t-foreach="['admin','manager','user']" t-as="role" t-key="role">
               <div class="eagle-settings-group">
                 <div class="eagle-settings-group-title"><i t-attf-class="fa #{role==='admin'?'fa-star':role==='manager'?'fa-briefcase':'fa-user'} me-1"/><t t-esc="role.charAt(0).toUpperCase()+role.slice(1)"/></div>
-                <t t-foreach="getSectionLabelEntries()" t-as="entry" t-key="entry[0]">
+                <t t-foreach="sectionLabelEntries" t-as="entry" t-key="entry[0]">
                   <div class="eagle-settings-item">
                     <span><t t-esc="entry[1]"/></span>
                     <div class="form-check form-switch mb-0">

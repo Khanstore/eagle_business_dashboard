@@ -1208,54 +1208,100 @@ class DashboardData(models.AbstractModel):
     # ─── Trend Chart Data ─────────────────────────────────────────────────────
     @api.model
     def get_trend_data(self, from_date=False, to_date=False, model='sale', granularity='day'):
-        """Return sales/invoice trend grouped by a selectable time bucket.
+        """Return sales trend points grouped by the requested time scale.
 
-        granularity: day, week, month, quarter, year. The old three-argument
-        call remains supported and defaults to day.
+        Supported scales are day, week, month, quarter and year.  The server
+        fills periods with zero sales so the graph has a continuous time axis
+        rather than silently skipping dates with no orders.
         """
-        allowed = {'day', 'week', 'month', 'quarter', 'year'}
-        granularity = granularity if granularity in allowed else 'day'
-
+        today = fields.Date.today()
         if not from_date:
-            today = fields.Date.today()
             from_date = str(today.replace(day=1))
             to_date = str(today)
+        else:
+            to_date = to_date or str(today)
+
+        granularity = str(granularity or 'day').lower()
+        if granularity not in {'day', 'week', 'month', 'quarter', 'year'}:
+            granularity = 'day'
+
+        from datetime import date, timedelta
+        try:
+            fd = date.fromisoformat(str(from_date)[:10])
+            td = date.fromisoformat(str(to_date)[:10])
+        except ValueError:
+            fd = today.replace(day=1)
+            td = today
+        if td < fd:
+            fd, td = td, fd
+
+        # Align the visible range to the selected period.
+        if granularity == 'week':
+            start = fd - timedelta(days=fd.weekday())
+            end = td - timedelta(days=td.weekday())
+            interval = timedelta(days=7)
+        elif granularity == 'month':
+            start = fd.replace(day=1)
+            end = td.replace(day=1)
+            interval = 'month'
+        elif granularity == 'quarter':
+            start = fd.replace(month=((fd.month - 1) // 3) * 3 + 1, day=1)
+            end = td.replace(month=((td.month - 1) // 3) * 3 + 1, day=1)
+            interval = 'quarter'
+        elif granularity == 'year':
+            start = fd.replace(month=1, day=1)
+            end = td.replace(month=1, day=1)
+            interval = 'year'
+        else:
+            start = fd
+            end = td
+            interval = timedelta(days=1)
 
         if model == 'sale':
-            date_field = 'date_order'
-            table = 'sale_order'
-            where = "state IN ('sale','done')"
+            self.env.cr.execute(
+                """
+                SELECT DATE_TRUNC(%s, date_order)::date AS period_start,
+                       COALESCE(SUM(amount_total),0)
+                FROM sale_order
+                WHERE state IN ('sale','done')
+                  AND DATE(date_order) >= %s AND DATE(date_order) <= %s
+                GROUP BY period_start
+                ORDER BY period_start
+                """, (granularity, str(fd), str(td)))
         else:
-            date_field = 'invoice_date'
-            table = 'account_move'
-            where = "move_type='out_invoice' AND state='posted'"
+            self.env.cr.execute(
+                """
+                SELECT DATE_TRUNC(%s, invoice_date::timestamp)::date AS period_start,
+                       COALESCE(SUM(amount_total),0)
+                FROM account_move
+                WHERE move_type='out_invoice' AND state='posted'
+                  AND invoice_date >= %s AND invoice_date <= %s
+                GROUP BY period_start
+                ORDER BY period_start
+                """, (granularity, str(fd), str(td)))
 
-        # DATE_TRUNC gives stable bucket starts for the graph axis.
-        bucket_sql = {
-            'day': f'DATE({date_field})',
-            'week': f"DATE_TRUNC('week', {date_field})::date",
-            'month': f"DATE_TRUNC('month', {date_field})::date",
-            'quarter': f"DATE_TRUNC('quarter', {date_field})::date",
-            'year': f"DATE_TRUNC('year', {date_field})::date",
-        }[granularity]
+        grouped = {r[0]: round(float(r[1] or 0.0), 2) for r in self.env.cr.fetchall()}
 
-        self.env.cr.execute(f"""
-            SELECT {bucket_sql} AS bucket, COALESCE(SUM(amount_total),0)
-            FROM {table}
-            WHERE {where}
-              AND {date_field} IS NOT NULL
-              AND DATE({date_field}) >= %s
-              AND DATE({date_field}) <= %s
-            GROUP BY bucket
-            ORDER BY bucket
-        """, (from_date, to_date))
+        points = []
+        current = start
+        while current <= end:
+            points.append({'date': str(current), 'amount': grouped.get(current, 0.0)})
+            if granularity == 'day' or granularity == 'week':
+                current = current + interval
+            elif granularity == 'month':
+                if current.month == 12:
+                    current = current.replace(year=current.year + 1, month=1, day=1)
+                else:
+                    current = current.replace(month=current.month + 1, day=1)
+            elif granularity == 'quarter':
+                month = current.month + 3
+                year = current.year + (1 if month > 12 else 0)
+                month = month - 12 if month > 12 else month
+                current = current.replace(year=year, month=month, day=1)
+            else:  # year
+                current = current.replace(year=current.year + 1, month=1, day=1)
 
-        rows = self.env.cr.fetchall()
-        return [{
-            'date': str(r[0]),
-            'amount': round(float(r[1]), 2),
-            'granularity': granularity,
-        } for r in rows]
+        return points
 
     # ─── Aging Report ────────────────────────────────────────────────────────
     @api.model

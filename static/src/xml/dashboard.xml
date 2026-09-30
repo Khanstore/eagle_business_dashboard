@@ -813,7 +813,7 @@
             <div class="eagle-trend-controls" role="tablist" aria-label="Sales trend time scale">
               <span class="eagle-trend-label">View by</span>
               <t t-foreach="trendPeriods" t-as="period" t-key="period.key">
-                <button type="button" class="eagle-period-btn" t-attf-class="eagle-period-btn #{state.trendGranularity===period.key?'active':''}" t-att-aria-pressed="state.trendGranularity===period.key ? 'true' : 'false'" t-on-click="()=>this.setTrendGranularity(period.key)"><t t-esc="period.label"/></button>
+                <button type="button" t-attf-class="eagle-period-btn #{state.trendGranularity===period.key?'active':''}" t-att-data-granularity="period.key" t-att-aria-pressed="state.trendGranularity===period.key ? 'true' : 'false'" t-on-click="onTrendPeriodClick"><t t-esc="period.label"/></button>
               </t>
             </div>
           </div>

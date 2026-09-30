@@ -96,10 +96,10 @@ class FinanceDashboard extends Component {
     }
 
     _fmt(d){return d.toISOString().split('T')[0];}
+    get sectionLabelEntries(){ return Object.entries(this.state.section_labels || {}); }
     _syncShared(){Object.assign(sharedFilterState,{from_date:this.state.from_date,to_date:this.state.to_date,active_preset:this.state.active_preset,selected_month:this.state.selected_month,selected_year:this.state.selected_year,partner_filter:this.state.partner_filter});}
     _setDates(from,to,preset='custom'){this.state.from_date=this._fmt(from);this.state.to_date=this._fmt(to);this.state.active_preset=preset;this._syncShared();this.loadAll();}
     vis(key){return this.state.visibility[key]!==false;}
-    getSectionLabelEntries(){return Object.entries(this.state.section_labels||{});}
     toggleTable(key){if(Object.prototype.hasOwnProperty.call(this.state.tableOpen,key)) this.state.tableOpen[key]=!this.state.tableOpen[key];}
     async toggleJournalRow(journalId){
         const key=String(journalId);

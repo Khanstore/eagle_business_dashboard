@@ -449,7 +449,7 @@ class Dashboard extends Component {
     get animDueSoonCount()  { return this.state.animCounters.due_soon_count !== undefined ? this.state.animCounters.due_soon_count : this.state.due_soon_count; }
     get animMonthSales()    { return this.state.animCounters.month_sales !== undefined ? this.state.animCounters.month_sales : Math.round(this.state.month_sales); }
 
-    // ── Sales trend graph ────────────────────────────────────────────────
+    // ── Sales trend graph ─────────────────────────────────────────────────
     get trendPeriods() {
         return [
             {key:'day', label:'Day'},
@@ -464,6 +464,10 @@ class Dashboard extends Component {
         if (this.state.trendGranularity === granularity) return;
         this.state.trendGranularity = granularity;
         this.loadAll();
+    }
+    onTrendPeriodClick(ev) {
+        const granularity = ev && ev.currentTarget ? ev.currentTarget.dataset.granularity : '';
+        this.setTrendGranularity(granularity);
     }
     get trendChartWidth() { return 820; }
     get trendChartHeight() { return 300; }
@@ -781,6 +785,45 @@ class Dashboard extends Component {
     openMonthSales(){this._newTab('sale.order',[["state","=","sale"],["date_order",">=",this._firstOfMonth()],["date_order","<=",this._today()]],"This Month's Orders");}
     openLowStockList(){this._newTab('product.product',[["type","=","consu"],["qty_available","<=",5],["active","=",true]],'Low Stock Products');}
     openProduct(id){this._openTab('product.product',id);}
+
+    // ── Create records from Business Dashboard ─────────────────────────────
+    async createOrder() {
+        await this.action.doAction({
+            type: 'ir.actions.act_window',
+            name: 'New Sales Order',
+            res_model: 'sale.order',
+            views: [[false, 'form']],
+            target: 'current',
+        });
+        await this.loadAll();
+    }
+
+    async createPurchase() {
+        await this.action.doAction({
+            type: 'ir.actions.act_window',
+            name: 'New Purchase Order',
+            res_model: 'purchase.order',
+            views: [[false, 'form']],
+            target: 'current',
+        });
+        await this.loadAll();
+    }
+
+    async createPayment(type) {
+        const partnerType = type === 'inbound' ? 'customer' : 'supplier';
+        await this.action.doAction({
+            type: 'ir.actions.act_window',
+            name: type === 'inbound' ? 'Receive Money' : 'Send Money',
+            res_model: 'account.payment',
+            views: [[false, 'form']],
+            target: 'current',
+            context: {
+                default_payment_type: type,
+                default_partner_type: partnerType,
+            },
+        });
+        await this.loadAll();
+    }
 
     async validatePayment(id) {
         if (this.state.validatingPaymentId) return;

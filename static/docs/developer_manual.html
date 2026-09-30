@@ -1,10 +1,8 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Eagle Business Dashboard — Developer Manual v1.0.11.4</title>
+<html><head><meta charset="utf-8"><title>Eagle Business Dashboard — Developer Manual v1.0.11.7</title>
 <style>body{font-family:Arial,sans-serif;line-height:1.5;margin:40px;color:#222}h1,h2{color:#18203a}pre{background:#f6f6f6;padding:12px;overflow:auto}code{background:#f4f4f4;padding:2px 4px}</style></head>
 <body>
-<p style="font-size:11px;color:#6b7280">Module release: 18.0.10.11.5</p>
-<h1>Eagle Business Dashboard — Developer Manual v1.0.11.4</h1>
-<p><strong>v1.0.11.4 runtime compatibility fix:</strong> Finance Dashboard ledger-security templates no longer call the JavaScript global <code>String()</code> from Owl template expressions. Journal IDs are used directly for object-key access, avoiding <code>ctx.String is not a function</code> during Owl rendering.</p>
+<h1>Eagle Business Dashboard — Developer Manual v1.0.11.7</h1>
 <p>This document describes the module architecture, security behavior, data flow, extension points, and validation considerations for Odoo 18.</p>
 <h2>Module Structure</h2>
 <p>Python models are in <code>models/</code>. Dashboard controllers are in <code>controllers/</code>. Owl components are in <code>static/src/js/</code> and templates are in <code>static/src/xml/</code>. Menu and server-side actions are in <code>views/menu.xml</code>.</p>
@@ -12,6 +10,12 @@
 <p>The principal RPC model is <code>dashboard.data</code>. Finance data is loaded through methods such as <code>get_finance_dashboard</code>, <code>get_journal_balance</code>, <code>get_journal_transactions</code>, and finance-control methods.</p>
 <h2>Dashboard Role Groups</h2>
 <p>The module defines three visible <code>res.groups</code> under the <code>Business Dashboard</code> <code>ir.module.category</code>. <code>group_dashboard_user</code> is the base role; <code>group_dashboard_manager</code> implies User; <code>group_dashboard_admin</code> implies Manager. The <code>res.groups</code> records do not define a <code>sequence</code> field because Odoo 18 does not provide that field on <code>res.groups</code>. The category itself may have a sequence.</p>
+<h2>Business Dashboard Action Handlers</h2><p><code>Dashboard</code> defines <code>createOrder()</code>, <code>createPurchase()</code>, and <code>createPayment(type)</code>. These methods are required by the Business Dashboard XML and call Odoo standard window actions through the Owl <code>action</code> service. The payment method sets <code>default_payment_type</code> and <code>default_partner_type</code> before opening <code>account.payment</code>.</p><p>This explicit handler contract prevents the Odoo 18 Owl runtime error <code>Invalid handler (expected a function, received: undefined)</code> and prevents the related <code>createPayment is not a function</code> failure.</p>
+<h2>Sales Trend Graph Architecture</h2>
+<p>The business dashboard stores the selected trend granularity in <code>state.trendGranularity</code>. The graph controls call <code>onTrendPeriodClick</code>, which delegates to <code>setTrendGranularity</code>. The client then calls <code>dashboard.data.get_trend_data(from_date, to_date, "sale", granularity)</code>.</p>
+<p><code>get_trend_data</code> supports day, week, month, quarter, and year grouping. It performs the aggregate query server-side, then generates a complete period sequence and returns zero-valued periods where there were no matching sales records. This avoids exposing hidden records to the browser and keeps aggregation in PostgreSQL.</p>
+<h2>Owl Template Safety</h2>
+<p>Finance dashboard templates do not call unsupported JavaScript globals such as <code>String(...)</code> or <code>Object.entries(...)</code> directly. Object-entry preparation is done by the <code>sectionLabelEntries</code> getter and numeric ledger identifiers use normal bracket coercion. The Sales Trend period buttons use a named component handler with a data attribute rather than an inline function expression.</p>
 <h2>Ledger Security Model</h2>
 <p>The security configuration model is <code>dashboard.ledger.security</code>. Each bank/cash journal has one security rule with fields <code>journal_id</code>, <code>masked</code>, and <code>approved_user_ids</code>.</p>
 <p>The effective visibility function is <code>_ledger_security_rules_for_journals()</code>. It reads the rule and approved-user relation and compares the current Odoo user ID with the approved list.</p>
@@ -45,6 +49,5 @@ Owl renders value* or ••••••</pre>
 <h2>Extension Guidance</h2>
 <p>New finance metrics should use server-side aggregation, return only required fields, preserve current-user security semantics, and document any new security-sensitive behavior in both manuals.</p>
 <h2>Validation</h2>
-<p>Validate Python syntax, JavaScript syntax, XML parsing, module manifest consistency, action/menu references, absence of invalid <code>res.groups.sequence</code> fields, and ZIP integrity before deployment. Runtime validation should be performed on an Odoo 18 staging database.</p>
-<section><h2>Sales Trend Graph</h2><p>The Business Dashboard renders Sales Trend as a dependency-free SVG graph. The UI stores the selected <code>trendGranularity</code> in component state and requests <code>dashboard.data.get_trend_data(from_date, to_date, 'sale', granularity)</code>. Supported values are <code>day</code>, <code>week</code>, <code>month</code>, <code>quarter</code>, and <code>year</code>. The server groups <code>sale_order</code> rows using PostgreSQL <code>DATE_TRUNC</code>. The client computes a responsive Y-axis, grid ticks, points, line, area fill, and collision-aware X-axis labels without external chart libraries.</p></section>
+<p>Validate Python syntax, JavaScript syntax, XML parsing, module manifest consistency, action/menu references, XML event handlers against the owning Owl component methods, absence of invalid <code>res.groups.sequence</code> fields, and ZIP integrity before deployment. Runtime validation should be performed on an Odoo 18 staging database.</p>
 </body></html>

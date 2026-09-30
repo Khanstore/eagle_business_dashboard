@@ -498,28 +498,3 @@
 .dark .eagle-auto-table-toolbar{background:rgba(30,41,59,.7);border-color:#334155}
 .dark .eagle-ledger-security-user-picker{background:#0f172a;border-color:#334155}
 .dark .eagle-ledger-security-user-option:hover{background:#1e293b}
-
-/* ══════════ SALES TREND VARIABLE-AXIS GRAPH ═══════════════════════════════ */
-.eagle-sales-trend-card { min-width:0; }
-.eagle-sales-trend-header { align-items:center; flex-wrap:wrap; gap:12px; }
-.eagle-trend-controls { display:flex; align-items:center; gap:3px; background:#f3f4f6; border-radius:10px; padding:3px; margin-left:auto; }
-.eagle-trend-label { font-size:11px; color:#6b7280; font-weight:600; padding:0 7px 0 8px; white-space:nowrap; }
-.eagle-trend-controls .eagle-period-btn { padding:5px 10px; font-size:11px; }
-.eagle-trend-summary { display:flex; gap:18px; align-items:center; padding:8px 20px 0; font-size:11px; color:#6b7280; }
-.eagle-trend-summary strong { color:#111827; font-weight:800; }
-.eagle-line-chart-wrap { padding-top:6px; }
-.eagle-line-chart-scroll { width:100%; overflow-x:auto; overflow-y:hidden; }
-.eagle-sales-line-chart { display:block; width:100%; min-width:560px; height:auto; overflow:visible; }
-.eagle-chart-grid { stroke:#e5e7eb; stroke-width:1; stroke-dasharray:3 4; }
-.eagle-chart-axis { stroke:#cbd5e1; stroke-width:1.2; }
-.eagle-chart-y-label, .eagle-chart-x-label { fill:#64748b; font-size:10px; font-family:inherit; }
-.eagle-chart-line { stroke:var(--eagle-accent,#4f5bd5); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
-.eagle-chart-area { fill:var(--eagle-accent,#4f5bd5); opacity:.10; }
-.eagle-chart-point { fill:#fff; stroke:var(--eagle-accent,#4f5bd5); stroke-width:2; vector-effect:non-scaling-stroke; cursor:pointer; transition:r .12s ease; }
-.eagle-chart-point:hover { r:6; }
-@media(max-width:720px){
-  .eagle-sales-trend-header { align-items:flex-start; }
-  .eagle-trend-controls { margin-left:0; width:100%; overflow-x:auto; }
-  .eagle-trend-controls .eagle-period-btn { flex:1 0 auto; }
-  .eagle-trend-summary { flex-wrap:wrap; gap:8px 16px; }
-}
