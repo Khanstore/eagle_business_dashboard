@@ -138,7 +138,7 @@ views/snapshot_templates.xml</pre>
 get_business_widgets()                     Business side widgets
 get_finance_dashboard(from_date, to_date)  Finance screen payload
 get_finance_widgets()                      Finance side widgets
-get_operations_dashboard(from, to)         Operations screen payload
+get_operations_dashboard(from, to)         Deliveries, receipts, internal transfers
 get_operations_widgets()                   Operations side widgets
 get_company_info()                         Company name + id for the header
 get_trend_data(from, to, model)            Trend series; model = sale|purchase</pre>
@@ -183,6 +183,11 @@ send_daily_digest() / toggle_daily_digest(enabled) / get_digest_status()</pre>
 
       <!-- OWL -->
       <div t-if="state.section === 'owl'">
+        <h3>Version 18.0.10.11.24 — Dashboard-wide table controls</h3>
+        <p><code>table_tools.js</code> standardizes fold/sort behavior across Business, Finance and Operations. A new table preference namespace means all tables initialize folded once after upgrade. It binds title controls only for single-table cards; multi-table and nested cards receive per-table controls. Existing component-owned fold controls and the reactive Operations Orders/Purchase sorting remain authoritative.</p>
+        <h3>Version 18.0.10.11.22 — Shared Quick Sale and table controls</h3>
+        <p>Both <code>dashboard.js</code> and <code>operations_dashboard.js</code> instantiate the shared <code>EagleQuickSaleDialog</code> from <code>quick_sale_dialog.js</code>. The previous Business Dashboard-only inline modal was removed, so partner lookup, product lookup, validation, and creation behavior are identical on both pages. Each caller supplies its own post-create refresh callback.</p>
+        <p><code>table_tools.js</code> provides common click-to-sort behavior for generic headings and persists/reapplies sort direction for the Owl-managed Business/Finance transaction headers too. Table preferences use stable card-title/column-label keys rather than a page-wide table index, preventing preferences from shifting when a panel is conditionally rendered.</p>
         <h3>Component registration</h3>
         <p>Each screen is a client action. The pattern, repeated for all five components:</p>
         <pre class="eagle-manual-code">MyComponent.template = "advanced_business_dashboard.my_template";
@@ -411,7 +416,7 @@ zip filename     eagle_business_dashboard18-0-3-3.zip</pre>
         </ol>
       </div>
 
-      <div class="eagle-manual-foot">Advanced Business Dashboard - Developer Manual - version 18.0.3.4</div>
+      <div class="eagle-manual-foot">Advanced Business Dashboard - Developer Manual - version 18.0.10.11.24</div>
     </div>
   </div>
 </div>

@@ -407,59 +407,6 @@
       </div>
     </t>
 
-    <!-- ══ QUICK SALE MODAL ══ -->
-    <t t-if="state.showQuickSale">
-      <div class="eagle-modal-backdrop">
-        <div class="eagle-modal eagle-target-modal">
-          <div class="eagle-modal-header"><h5 class="eagle-modal-title"><i class="fa fa-bolt me-2"/>Quick Sale</h5><button class="ebtn ebtn-ghost ebtn-icon" t-on-click="closeQuickSale"><i class="fa fa-times"/></button></div>
-          <div class="eagle-modal-body"><div class="eagle-card-inner">
-            <t t-if="state.quickSaleError">
-              <div class="eagle-alert eagle-alert-danger mb-3"><i class="fa fa-exclamation-circle me-1"/><t t-esc="state.quickSaleError"/></div>
-            </t>
-            <label class="form-label small text-muted">Partner (optional)</label>
-            <input type="text" class="form-control form-control-sm mb-3"
-                   placeholder="Type to search partner..."
-                   list="eagle-quick-sale-partners"
-                   t-model="state.quickSalePartnerSearch"
-                   t-on-input="onQuickSalePartnerInput"/>
-            <datalist id="eagle-quick-sale-partners">
-              <option value="— Walk-in customer —"/>
-              <t t-foreach="state.partnerOptions" t-as="p" t-key="p.id">
-                <option t-att-value="p.name + ' [#' + p.id + ']'"/>
-              </t>
-            </datalist>
-            <label class="form-label small text-muted">Product</label>
-            <input type="text" class="form-control form-control-sm mb-3"
-                   placeholder="Type name, internal reference, or barcode..."
-                   list="eagle-quick-sale-products"
-                   t-model="state.quickSaleProductSearch"
-                   t-on-input="onQuickSaleProductInput"/>
-            <datalist id="eagle-quick-sale-products">
-              <t t-foreach="state.productOptions" t-as="p" t-key="p.id">
-                <option t-att-value="p.name + (p.default_code ? ' [' + p.default_code + ']' : '') + ' — BDT ' + p.price.toFixed(2) + ' [#' + p.id + ']'"/>
-              </t>
-            </datalist>
-            <t t-if="state.productOptions.length === 0 and !state.quickSaleError">
-              <p class="text-muted small mb-3"><i class="fa fa-spinner fa-spin me-1"/>Searching products...</p>
-            </t>
-            <p t-if="state.productOptions.length" class="text-muted small mb-3">
-              <i class="fa fa-search me-1"/>Showing matching active saleable products from the full product catalog.
-            </p>
-            <label class="form-label small text-muted">Quantity</label>
-            <input type="number" class="form-control form-control-sm" min="1" step="1" t-model="state.quickSaleQty"/>
-            <p class="text-muted small mt-2 mb-0"><i class="fa fa-info-circle me-1"/>If the selected partner already has a draft order, this product is added to it. Otherwise a new draft order is created. Either way, it opens in a new tab for review before confirming.</p>
-          </div></div>
-          <div class="eagle-modal-footer">
-            <button class="ebtn ebtn-outline" t-on-click="closeQuickSale">Cancel</button>
-            <button class="ebtn ebtn-primary" t-on-click="submitQuickSale" t-att-disabled="state.quickSaleSubmitting">
-              <i t-attf-class="fa #{state.quickSaleSubmitting?'fa-spinner fa-spin':'fa-check'} me-1"/>
-              <t t-esc="state.quickSaleSubmitting ? 'Creating...' : 'Create Order'"/>
-            </button>
-          </div>
-        </div>
-      </div>
-    </t>
-
     <!-- ══ SAVE FILTER PROMPT ══ -->
     <t t-if="state.showSaveFilterPrompt">
       <div class="eagle-modal-backdrop">
@@ -491,13 +438,6 @@
           </div></div>
           <div class="eagle-modal-footer"><button class="ebtn ebtn-outline" t-on-click="closeSnoozeModal">Cancel</button><button class="ebtn ebtn-primary" t-on-click="confirmSnooze"><i class="fa fa-clock-o me-1"/>Hide for <t t-esc="state.snoozeWeeks"/> week(s)</button></div>
         </div>
-      </div>
-    </t>
-
-    <!-- ══ QUICK SALE RESULT TOAST ══ -->
-    <t t-if="state.quickSaleLastResult">
-      <div class="eagle-alert" style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;">
-        <i class="fa fa-check-circle me-1"/><t t-esc="state.quickSaleLastResult"/>
       </div>
     </t>
 
@@ -566,7 +506,7 @@
       <div class="eagle-two-col">
         <t t-if="state.bestWorstDay.best">
           <div class="eagle-card">
-            <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-calendar-check-o"/>This Month's Highs &amp; Lows</h4></div>
+            <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-calendar-check-o"/>Selected Period Highs &amp; Lows</h4></div>
             <div class="d-flex">
               <div class="eagle-day-cell flex-fill">
                 <div class="eagle-day-icon">🏆</div>
@@ -1287,10 +1227,14 @@
               <td class="text-end money-out"><t t-esc="tx.paid"/></td>
               <td>
                 <span t-attf-class="ebadge #{(tx.state=='paid'||tx.state=='in_process')?'ebadge-green':tx.state=='draft'?'ebadge-gray':(tx.state=='canceled'||tx.state=='rejected')?'ebadge-red':'ebadge-yellow'}"><t t-esc="tx.state"/></span>
-                <button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2"
+                <button t-if="tx.state=='draft'" class="ebtn ebtn-sm ebtn-green ms-2"
                         t-att-disabled="state.validatingPaymentId===tx.id"
-                        t-on-click="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment">
+                        t-on-click="()=>this.validatePayment(tx.id)" title="Post / Validate payment">
                   <i class="fa fa-check"/> Validate
+                </button>
+                <button t-if="tx.state=='in_process'" class="ebtn ebtn-sm ebtn-outline ms-2"
+                        t-on-click="()=>this.openTransaction(tx.id)" title="Open payment for bank matching / reconciliation">
+                  <i class="fa fa-link"/> Match
                 </button>
               </td>
             </tr></t>

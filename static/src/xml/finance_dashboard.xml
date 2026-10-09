@@ -149,42 +149,6 @@
             <div class="col-6"><label class="form-label small text-muted">Sale Order Threshold (BDT)</label><input type="number" class="form-control form-control-sm" t-model="state.approvalThresholds.sale_threshold"/></div>
             <div class="col-6"><label class="form-label small text-muted">Purchase Order Threshold (BDT)</label><input type="number" class="form-control form-control-sm" t-model="state.approvalThresholds.purchase_threshold"/></div>
           </div>
-          <hr class="my-3"/>
-          <p class="fw-semibold mb-1"><i class="fa fa-lock me-1"/>Ledger Balance Security</p>
-          <p class="text-muted small mb-2">Enable masking per bank/cash journal. Unauthorized users receive no Previous or New Balance amount from the server. Change remains visible for transfer checking. Dashboard Admins and approved users see actual balances.</p>
-          <div class="alert alert-info py-2 px-3 mt-2 mb-2"><i class="fa fa-user me-1"/>Security is evaluated for the Odoo user making the dashboard/report request. Administrator status grants configuration access only; it does not bypass a masked journal. A user must be explicitly listed as an Approved User to see that journal balance.</div>
-          <t t-if="state.ledgerSecurityJournals.length"><div class="alert alert-secondary py-2 px-3 mt-2 mb-2"><i class="fa fa-user-circle me-1"/>Testing as: <strong><t t-esc="state.ledgerSecurityCurrentUserName || 'Current User'"/></strong>. To test masking, do not approve this user for the selected journal.</div></t>
-          <t t-if="state.ledgerSecurityJournals.length===0"><div class="text-muted small py-2">No bank/cash journals available.</div></t>
-          <div t-if="state.ledgerSecurityJournals.length" class="eagle-ledger-security-list">
-            <t t-foreach="state.ledgerSecurityJournals" t-as="lj" t-key="lj.id">
-              <div class="eagle-ledger-security-row">
-                <div class="eagle-ledger-security-journal">
-                  <div class="fw-semibold"><t t-esc="lj.name"/> <span t-if="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].masked" class="ebadge ebadge-yellow ms-1"><i class="fa fa-lock me-1"/>Protected rule</span></div>
-                  <div class="small mt-1"><span t-if="lj.current_user_approved" class="ebadge ebadge-green"><i class="fa fa-check me-1"/>Current user approved</span><span t-else="" t-if="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].masked" class="ebadge ebadge-red"><i class="fa fa-eye-slash me-1"/>Current user masked</span></div>
-                  <label class="form-check form-switch mb-0 small text-muted">
-                    <input class="form-check-input" type="checkbox" t-att-checked="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].masked ? true : undefined" t-on-change="(ev)=>this.toggleLedgerMask(lj.id,ev)"/>
-                    <span class="ms-1">Mask balances</span>
-                  </label>
-                </div>
-                <div class="eagle-ledger-security-users">
-                  <label class="form-label small text-muted mb-1">Approved users</label>
-                  <div class="eagle-ledger-security-user-picker">
-                    <t t-foreach="state.ledgerSecurityUsers" t-as="usr" t-key="usr.id">
-                      <label class="eagle-ledger-security-user-option">
-                        <input type="checkbox"
-                               t-att-checked="state.ledgerSecurityDraft[lj.id] &amp;&amp; state.ledgerSecurityDraft[lj.id].approved_user_ids.includes(usr.id)"
-                               t-on-change="(ev)=>this.toggleLedgerApproval(lj.id,usr.id,ev)"/>
-                        <span><t t-esc="usr.name"/></span>
-                      </label>
-                    </t>
-                    <t t-if="state.ledgerSecurityUsers.length===0"><span class="text-muted small">No internal users available.</span></t>
-                  </div>
-                </div>
-              </div>
-            </t>
-          </div>
-          <t t-if="state.ledgerSecurityError"><div class="alert alert-danger py-2 px-3 mt-3 mb-0"><i class="fa fa-warning me-1"/><t t-esc="state.ledgerSecurityError"/></div></t>
-          <t t-if="state.ledgerSecuritySaved"><div class="alert alert-success py-2 px-3 mt-3 mb-0"><i class="fa fa-check me-1"/>Ledger security saved.</div></t>
         </div></div>
         <div class="eagle-modal-footer">
           <t t-if="state.settingsSaved"><span class="eagle-notes-saved"><i class="fa fa-check"/>Saved!</span></t>
@@ -406,7 +370,8 @@
                   <t t-if="isJournalRowLoading(jb.journal_id)"><div class="jb-loading"><i class="fa fa-spinner fa-spin me-1"/>Loading transactions…</div></t>
                   <t t-elif="getJournalTransactions(jb.journal_id).length"><div class="eagle-table-wrap jb-details-table-wrap"><table class="eagle-table jb-details-table">
                     <thead><tr><th>Reference</th><th t-if="showDateColumn">Date</th><th>Partner</th><th class="text-end">Deposit</th><th class="text-end">Withdraw</th><th>Status</th></tr></thead><tbody>
-                      <t t-foreach="getJournalTransactions(jb.journal_id)" t-as="tx" t-key="tx.id"><tr><td><a class="link" href="#" t-on-click.prevent.stop="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td><td t-if="showDateColumn"><t t-esc="tx.date"/></td><td><t t-esc="tx.partner"/></td><td class="text-end money-in"><t t-esc="formatAmount(tx.received)"/></td><td class="text-end money-out"><t t-esc="formatAmount(tx.paid)"/></td><td><span t-attf-class="ebadge #{tx.state=='paid'?'ebadge-green':tx.state=='in_process'?'ebadge-yellow':tx.state=='draft'?'ebadge-gray':'ebadge-red'}"><t t-esc="tx.state"/></span><button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2" t-att-disabled="state.validatingPaymentId===tx.id" t-on-click.stop="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment"><i class="fa fa-check"/> Validate</button></td></tr></t>
+                      <t t-foreach="getJournalTransactions(jb.journal_id)" t-as="tx" t-key="tx.id"><tr><td><a class="link" href="#" t-on-click.prevent.stop="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td><td t-if="showDateColumn"><t t-esc="tx.date"/></td><td><t t-esc="tx.partner"/></td><td class="text-end money-in"><t t-esc="formatAmount(tx.received)"/></td><td class="text-end money-out"><t t-esc="formatAmount(tx.paid)"/></td><td><span t-attf-class="ebadge #{tx.state=='paid'?'ebadge-green':tx.state=='in_process'?'ebadge-yellow':tx.state=='draft'?'ebadge-gray':'ebadge-red'}"><t t-esc="tx.state"/></span><button t-if="tx.state=='draft'" class="ebtn ebtn-sm ebtn-green ms-2" t-att-disabled="state.validatingPaymentId===tx.id" t-on-click.stop="()=>this.validatePayment(tx.id)" title="Post / Validate payment"><i class="fa fa-check"/> Validate</button>
+<button t-if="tx.state=='in_process'" class="ebtn ebtn-sm ebtn-outline ms-2" t-on-click.stop="()=>this.openTransaction(tx.id)" title="Open payment for bank matching / reconciliation"><i class="fa fa-link"/> Match</button></td></tr></t>
                     </tbody><tfoot><tr><td t-att-colspan="showDateColumn?3:2">Total (<t t-esc="getJournalTransactions(jb.journal_id).length"/>)</td><td class="text-end money-in fw-bold"><t t-esc="journalTxReceived(jb.journal_id)"/></td><td class="text-end money-out fw-bold"><t t-esc="journalTxPaid(jb.journal_id)"/></td><td/></tr></tfoot>
                   </table></div></t>
                   <t t-else=""><div class="jb-no-transactions"><i class="fa fa-info-circle me-1"/>No payment transactions found for this journal in the selected period.</div></t>
@@ -550,10 +515,14 @@
                   <td class="text-end money-out"><t t-esc="tx.paid"/></td>
                   <td>
                     <span t-attf-class="ebadge #{(tx.state=='paid'||tx.state=='in_process')?'ebadge-green':tx.state=='draft'?'ebadge-gray':(tx.state=='canceled'||tx.state=='rejected')?'ebadge-red':'ebadge-yellow'}"><t t-esc="tx.state"/></span>
-                    <button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2"
+                    <button t-if="tx.state=='draft'" class="ebtn ebtn-sm ebtn-green ms-2"
                             t-att-disabled="state.validatingPaymentId===tx.id"
-                            t-on-click="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment">
+                            t-on-click="()=>this.validatePayment(tx.id)" title="Post / Validate payment">
                       <i class="fa fa-check"/> Validate
+                    </button>
+                    <button t-if="tx.state=='in_process'" class="ebtn ebtn-sm ebtn-outline ms-2"
+                            t-on-click="()=>this.openTransaction(tx.id)" title="Open payment for bank matching / reconciliation">
+                      <i class="fa fa-link"/> Match
                     </button>
                   </td>
                 </tr>
@@ -613,7 +582,8 @@
                   <t t-if="isJournalRowLoading(jr.journal_id)"><div class="jb-loading"><i class="fa fa-spinner fa-spin me-1"/>Loading transactions…</div></t>
                   <t t-elif="getJournalTransactions(jr.journal_id).length"><div class="eagle-table-wrap jb-details-table-wrap"><table class="eagle-table jb-details-table">
                     <thead><tr><th>Reference</th><th t-if="showDateColumn">Date</th><th>Partner</th><th class="text-end">Deposit</th><th class="text-end">Withdraw</th><th>Status</th></tr></thead><tbody>
-                      <t t-foreach="getJournalTransactions(jr.journal_id)" t-as="tx" t-key="tx.id"><tr><td><a class="link" href="#" t-on-click.prevent.stop="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td><td t-if="showDateColumn"><t t-esc="tx.date"/></td><td><t t-esc="tx.partner"/></td><td class="text-end money-in"><t t-esc="formatAmount(tx.received)"/></td><td class="text-end money-out"><t t-esc="formatAmount(tx.paid)"/></td><td><span t-attf-class="ebadge #{tx.state=='paid'?'ebadge-green':tx.state=='in_process'?'ebadge-yellow':tx.state=='draft'?'ebadge-gray':'ebadge-red'}"><t t-esc="tx.state"/></span><button t-if="tx.state=='draft' || tx.state=='in_process'" class="ebtn ebtn-sm ebtn-green ms-2" t-att-disabled="state.validatingPaymentId===tx.id" t-on-click.stop="()=>this.validatePayment(tx.id)" title="Confirm / Validate payment"><i class="fa fa-check"/> Validate</button></td></tr></t>
+                      <t t-foreach="getJournalTransactions(jr.journal_id)" t-as="tx" t-key="tx.id"><tr><td><a class="link" href="#" t-on-click.prevent.stop="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td><td t-if="showDateColumn"><t t-esc="tx.date"/></td><td><t t-esc="tx.partner"/></td><td class="text-end money-in"><t t-esc="formatAmount(tx.received)"/></td><td class="text-end money-out"><t t-esc="formatAmount(tx.paid)"/></td><td><span t-attf-class="ebadge #{tx.state=='paid'?'ebadge-green':tx.state=='in_process'?'ebadge-yellow':tx.state=='draft'?'ebadge-gray':'ebadge-red'}"><t t-esc="tx.state"/></span><button t-if="tx.state=='draft'" class="ebtn ebtn-sm ebtn-green ms-2" t-att-disabled="state.validatingPaymentId===tx.id" t-on-click.stop="()=>this.validatePayment(tx.id)" title="Post / Validate payment"><i class="fa fa-check"/> Validate</button>
+<button t-if="tx.state=='in_process'" class="ebtn ebtn-sm ebtn-outline ms-2" t-on-click.stop="()=>this.openTransaction(tx.id)" title="Open payment for bank matching / reconciliation"><i class="fa fa-link"/> Match</button></td></tr></t>
                     </tbody><tfoot><tr><td t-att-colspan="showDateColumn?3:2">Total (<t t-esc="getJournalTransactions(jr.journal_id).length"/>)</td><td class="text-end money-in fw-bold"><t t-esc="journalTxReceived(jr.journal_id)"/></td><td class="text-end money-out fw-bold"><t t-esc="journalTxPaid(jr.journal_id)"/></td><td/></tr></tfoot>
                   </table></div></t>
                   <t t-else=""><div class="jb-no-transactions"><i class="fa fa-info-circle me-1"/>No payment transactions found for this journal in the selected period.</div></t>

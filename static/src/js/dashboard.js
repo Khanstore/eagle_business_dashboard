@@ -4,6 +4,7 @@ import { Component, onWillStart, onWillDestroy, onMounted, onPatched, useState }
 import { enhanceEagleTables } from "./table_tools";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
+import { EagleQuickSaleDialog } from "./quick_sale_dialog";
 
 class Dashboard extends Component {
     setup() {
@@ -101,10 +102,7 @@ class Dashboard extends Component {
             showKpiComments:false, activeKpiKey:'', activeKpiLabel:'', kpiComments:[], newCommentText:'',
             showShareModal:false, shareUrl:'',
             savedFilters:[], showSaveFilterPrompt:false, filterNameInput:'',
-            showQuickSale:false, quickSalePartner:'', quickSaleProduct:'', quickSalePartnerSearch:'', quickSaleProductSearch:'', quickSaleQty:1,
             validatingPaymentId:0,
-            productOptions:[], quickSaleError:'', quickSaleSubmitting:false, quickSaleLastResult:'',
-            quickSaleProductSearchSeq:0, quickSaleProductSearchTimer:null,
         });
 
         this._orderLines    = {};
@@ -114,6 +112,8 @@ class Dashboard extends Component {
         this._prevOverdue = null;
         this._prevLowStockLen = null;
         this._confettiShown = false;
+        this._loadSequence = 0;
+        this._quickSaleDialog = null;
 
         try { this.state.darkMode = localStorage.getItem('eagle_dark_mode') === '1'; } catch(e) {}
         try { this.state.recentlyViewed = JSON.parse(localStorage.getItem('eagle_recent_business') || '[]'); } catch(e) {}
@@ -140,6 +140,7 @@ class Dashboard extends Component {
             this._stopRefresh();
             if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
             if (this._keydownHandler) window.removeEventListener('keydown', this._keydownHandler);
+            if (this._quickSaleDialog) { this._quickSaleDialog.close(); this._quickSaleDialog = null; }
         });
     }
 
@@ -212,10 +213,11 @@ class Dashboard extends Component {
     }
 
     async loadAll() {
+        const loadSequence = ++this._loadSequence;
         this.state.loading = true;
         this._loadErrors = [];
         try {
-            const [data, widgets, vis, trend, aging, ops, cust, fin, notes, company, stage23, control] = await Promise.all([
+            const [data, widgets, vis, trend, aging, ops, cust, fin, notes, company, stage23, control, bestWorstDay] = await Promise.all([
                 this._safeRpc("dashboard.data","get_dashboard",[this.state.from_date||false,this.state.to_date||false],{quotations:[],orders:[],purchases:[],rfq:[],transactions:[]},'Core data'),
                 this._safeRpc("dashboard.data","get_business_widgets",[],{overdue_count:0,overdue_amount:0,due_soon_count:0,due_soon_amount:0,top_customers:[],month_sales:0,sales_target:0,low_stock:[]},'Business KPIs'),
                 this._safeRpc("dashboard.data","get_visibility",[],{role:this.state.role,visibility:{},section_labels:{},all_defaults:{}},'Visibility'),
@@ -228,7 +230,10 @@ class Dashboard extends Component {
                 this._safeRpc("dashboard.data","get_company_info",[],{name:'',id:0},'Company'),
                 this._safeRpc("dashboard.data","get_management_insights",[this.state.from_date||false,this.state.to_date||false,this.state.dailyClosingDate||false],{},'Management analytics'),
                 this._safeRpc("dashboard.data","get_control_center",[this.state.from_date||false,this.state.to_date||false],{},'Control center'),
+                this._safeRpc("dashboard.data","get_best_worst_day",[this.state.from_date||false,this.state.to_date||false],{best:null,worst:null},'Period highs/lows'),
             ]);
+
+            if (loadSequence !== this._loadSequence) return;
 
             this._orderLines={}; this._purchaseLines={};
             const strip=(map,arr)=>arr.map(r=>{map[r.id]=r.lines||[];const{lines,...rest}=r;return rest;});
@@ -261,6 +266,7 @@ class Dashboard extends Component {
                 teamNotes:      notes||'',
                 companyName:    company ? company.name : '',
                 companyId:      company ? company.id : 0,
+                bestWorstDay:   bestWorstDay || {best:null,worst:null},
             });
 
             const pm={};
@@ -281,9 +287,11 @@ class Dashboard extends Component {
             this._loadErrors.push("Dashboard core");
             console.error("Dashboard load error:",e);
         } finally {
-            this.state.loadErrors = [...new Set(this._loadErrors || [])];
-            this.state.lastUpdated = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
-            this.state.loading = false;
+            if (loadSequence === this._loadSequence) {
+                this.state.loadErrors = [...new Set(this._loadErrors || [])];
+                this.state.lastUpdated = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+                this.state.loading = false;
+            }
         }
     }
 
@@ -292,16 +300,14 @@ class Dashboard extends Component {
     // ── Load the lighter "attractive pack" widgets in parallel ─────────────
     async loadAttractivePack() {
         try {
-            const [nl, bw, bundles, streak, theme, online] = await Promise.all([
+            const [nl, bundles, streak, theme, online] = await Promise.all([
                 this.orm.call("dashboard.data","get_nl_summary",[]),
-                this.orm.call("dashboard.data","get_best_worst_day",[this.state.from_date||false,this.state.to_date||false]),
                 this.orm.call("dashboard.data","get_product_bundles",[]),
                 this.orm.call("dashboard.data","get_streak",[]),
                 this.orm.call("dashboard.data","get_theme_color",[]),
                 this.orm.call("dashboard.data","get_online_users",[]),
             ]);
             this.state.nlSummary = nl || '';
-            this.state.bestWorstDay = bw || {best:null,worst:null};
             this.state.productBundles = bundles || [];
             this.state.streak = streak ? streak.streak : 0;
             this.state.dailyTarget = streak ? streak.daily_target : 0;
@@ -830,8 +836,12 @@ class Dashboard extends Component {
         this.state.validatingPaymentId = id;
         try {
             const result = await this.orm.call('dashboard.data', 'validate_payment', [id]);
-            if (result && result.already_posted && result.message) {
-                window.alert(result.message);
+            if (result && result.already_posted) {
+                // Odoo 18 in_process payments are already posted. Do not try to
+                // post them again; open the payment so the standard matching /
+                // reconciliation workflow can be completed.
+                this.openTransaction(id);
+                return;
             }
             await this.loadAll();
         } catch (e) {
@@ -1075,102 +1085,22 @@ class Dashboard extends Component {
     }
 
     // ── Quick Sale ────────────────────────────────────────────────────────
-    async openQuickSale() {
-        this.state.quickSalePartner=''; this.state.quickSaleProduct='';
-        this.state.quickSalePartnerSearch=''; this.state.quickSaleProductSearch='';
-        this.state.quickSaleQty=1;
-        this.state.quickSaleError=''; this.state.quickSaleSubmitting=false;
-        this.state.showQuickSale=true;
-        await this.searchQuickSaleProducts('');
-    }
-    closeQuickSale() {
-        this.state.showQuickSale=false;
-        if (this.state.quickSaleProductSearchTimer) {
-            clearTimeout(this.state.quickSaleProductSearchTimer);
-            this.state.quickSaleProductSearchTimer = null;
+    // Business and Operations deliberately share the same standalone dialog
+    // so partner search, product search, validation, and create behavior match.
+    openQuickSale() {
+        if (!this._quickSaleDialog) {
+            this._quickSaleDialog = new EagleQuickSaleDialog({
+                orm: this.orm,
+                formatAmount: (value) => this.formatAmount(value),
+                onCreated: async (result) => {
+                    if (result && result.id) {
+                        this._openTab('sale.order', result.id);
+                        await this.loadAll();
+                    }
+                },
+            });
         }
-    }
-
-    async searchQuickSaleProducts(search='') {
-        const seq = ++this.state.quickSaleProductSearchSeq;
-        try {
-            const results = await this.orm.call(
-                "dashboard.data", "get_product_options", [search || '']
-            );
-            if (seq !== this.state.quickSaleProductSearchSeq || !this.state.showQuickSale) return;
-            this.state.productOptions = results || [];
-        } catch(e) {
-            console.error("Failed to search products:", e);
-            if (seq === this.state.quickSaleProductSearchSeq) {
-                this.state.productOptions = [];
-                this.state.quickSaleError = 'Could not search products. Please try again.';
-            }
-        }
-    }
-
-    onQuickSalePartnerInput(ev) {
-        const value = (ev.target.value || '').trim();
-        this.state.quickSalePartnerSearch = value;
-        const match = value.match(/\[#(\d+)\]\s*$/);
-        this.state.quickSalePartner = match ? match[1] : '';
-        if (value === '— Walk-in customer —') this.state.quickSalePartner = '';
-    }
-
-    onQuickSaleProductInput(ev) {
-        const value = (ev.target.value || '').trim();
-        this.state.quickSaleProductSearch = value;
-        const match = value.match(/\[#(\d+)\]\s*$/);
-        this.state.quickSaleProduct = match ? match[1] : '';
-
-        // Search the entire server-side product catalog instead of a fixed
-        // browser-side list. Debouncing avoids an RPC for every keystroke.
-        if (this.state.quickSaleProductSearchTimer) {
-            clearTimeout(this.state.quickSaleProductSearchTimer);
-        }
-        this.state.quickSaleProductSearchTimer = setTimeout(() => {
-            this.searchQuickSaleProducts(value);
-            this.state.quickSaleProductSearchTimer = null;
-        }, 250);
-    }
-
-    async submitQuickSale() {
-        this.state.quickSaleError = '';
-        if (!this.state.quickSaleProduct) {
-            this.state.quickSaleError = 'Please select a product.';
-            return;
-        }
-        const qty = parseFloat(this.state.quickSaleQty);
-        if (!qty || qty <= 0) {
-            this.state.quickSaleError = 'Quantity must be greater than 0.';
-            return;
-        }
-        this.state.quickSaleSubmitting = true;
-        try {
-            const partnerId = this.state.quickSalePartner ? parseInt(this.state.quickSalePartner) : false;
-            const productId = parseInt(this.state.quickSaleProduct);
-            const res = await this.orm.call("dashboard.data","create_quick_sale",
-                [partnerId, productId, qty, false]);
-            if (res && res.error) {
-                this.state.quickSaleError = res.error;
-                return;
-            }
-            if (res && res.id) {
-                this.state.showQuickSale = false;
-                this.state.quickSaleLastResult = res.merged
-                    ? `Added to existing draft order ${res.name}.`
-                    : `Created new order ${res.name}.`;
-                this._openTab('sale.order', res.id);
-                await this.loadAll();
-                setTimeout(()=>{ this.state.quickSaleLastResult = ''; }, 5000);
-            } else {
-                this.state.quickSaleError = 'Something went wrong creating the order. Please try again.';
-            }
-        } catch(e) {
-            console.error("Quick sale failed:", e);
-            this.state.quickSaleError = 'Server error while creating the order.';
-        } finally {
-            this.state.quickSaleSubmitting = false;
-        }
+        this._quickSaleDialog.open();
     }
 
     // ── Dark mode ─────────────────────────────────────────────────────────

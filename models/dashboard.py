@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from datetime import timedelta
 from odoo import models, api, fields
@@ -1860,27 +1861,29 @@ class DashboardData(models.AbstractModel):
     # ═════════════════════════════════════════════════════════════════════
     @api.model
     def get_operations_dashboard(self, from_date=False, to_date=False):
-        domain = []
+        # Warehouse rows are considered in-range when EITHER their creation
+        # date OR their completion (done) date falls inside the selected
+        # dashboard date range. This prevents a delivery created earlier but
+        # completed in the selected period from disappearing, and likewise
+        # keeps newly-created still-pending deliveries visible.
+        range_domain = []
         if from_date and to_date:
-            domain = [('scheduled_date', '>=', from_date), ('scheduled_date', '<=', to_date + ' 23:59:59')]
+            range_start = str(from_date) + ' 00:00:00'
+            range_end = str(to_date) + ' 23:59:59'
+            range_domain = [
+                '|',
+                '&', ('create_date', '>=', range_start), ('create_date', '<=', range_end),
+                '&', ('date_done', '>=', range_start), ('date_done', '<=', range_end),
+            ]
 
-        def row(p):
-            today = fields.Date.today()
-            sched = p.scheduled_date.date() if p.scheduled_date else None
-            return {
-                'id': p.id, 'name': p.name, 'partner': p.partner_id.name or '', 'partner_id': p.partner_id.id,
-                'scheduled_date': self._fmt(sched) if sched else '',
-                'date_done': self._fmt(p.date_done.date()) if p.date_done else '',
-                'state': p.state, 'origin': p.origin or '', 'products_count': len(p.move_ids),
-                'late': bool(sched and sched < today and p.state not in ('done', 'cancel')),
-            }
+        row = self._operations_picking_row
 
         deliveries = self.env['stock.picking'].search(
-            domain + [('picking_type_id.code', '=', 'outgoing')], order='scheduled_date desc', limit=200)
+            range_domain + [('picking_type_id.code', '=', 'outgoing')], order='create_date desc', limit=200)
         receipts = self.env['stock.picking'].search(
-            domain + [('picking_type_id.code', '=', 'incoming')], order='scheduled_date desc', limit=200)
+            range_domain + [('picking_type_id.code', '=', 'incoming')], order='create_date desc', limit=200)
         internal = self.env['stock.picking'].search(
-            domain + [('picking_type_id.code', '=', 'internal')], order='scheduled_date desc', limit=200)
+            range_domain + [('picking_type_id.code', '=', 'internal')], order='create_date desc', limit=200)
 
         return {
             'deliveries': [row(p) for p in deliveries],
@@ -1905,16 +1908,182 @@ class DashboardData(models.AbstractModel):
         }
 
     @api.model
+    def _operations_parent_name(self, partner):
+        cp = partner.commercial_partner_id
+        return cp.name if (cp and cp.id != partner.id) else ''
+
+    @api.model
+    def _operations_sale_order_row(self, order):
+        lines = [{
+            'product': l.product_id.name or l.name or '',
+            'qty': l.product_uom_qty,
+            'uom': l.product_uom.name or '',
+            'price_unit': l.price_unit,
+            'discount': getattr(l, 'discount', 0.0) or 0.0,
+            'tax': ', '.join(l.tax_id.mapped('name')) if hasattr(l, 'tax_id') else '',
+            'subtotal': l.price_subtotal,
+        } for l in order.order_line.filtered(lambda x: not x.display_type)]
+        return {
+            'id': order.id, 'name': order.name, 'partner': order.partner_id.name or '',
+            'partner_id': order.partner_id.id,
+            'partner_parent': self._operations_parent_name(order.partner_id),
+            'status': order.state, 'state': order.state, 'date': self._fmt(order.date_order),
+            'invoice_status': order.invoice_status, 'billing_status': order.invoice_status,
+            'amount': order.amount_total, 'lines': lines,
+        }
+
+    @api.model
+    def _operations_payment_row(self, payment):
+        return {
+            'id': payment.id, 'name': payment.name or 'Draft',
+            'partner': payment.partner_id.name or '', 'partner_id': payment.partner_id.id,
+            'partner_parent': self._operations_parent_name(payment.partner_id),
+            'ledger': payment.journal_id.name, 'journal_id': payment.journal_id.id,
+            'date': self._fmt(payment.date),
+            'received': payment.amount if payment.payment_type == 'inbound' else 0,
+            'paid': payment.amount if payment.payment_type == 'outbound' else 0,
+            'state': payment.state,
+        }
+
+    @api.model
+    def _operations_picking_row(self, picking):
+        today = fields.Date.today()
+        sched = picking.scheduled_date.date() if picking.scheduled_date else None
+        created = picking.create_date.date() if picking.create_date else None
+        completed = picking.date_done.date() if picking.date_done else None
+        carrier = picking.carrier_id if 'carrier_id' in picking._fields else False
+        tracking_ref = picking.carrier_tracking_ref if 'carrier_tracking_ref' in picking._fields else False
+        created_at = fields.Datetime.context_timestamp(self, picking.create_date) if picking.create_date else False
+        scheduled_at = fields.Datetime.context_timestamp(self, picking.scheduled_date) if picking.scheduled_date else False
+        tracking_url = False
+        if tracking_ref and 'carrier_tracking_url' in picking._fields:
+            raw_tracking_url = picking.carrier_tracking_url or False
+            if raw_tracking_url:
+                try:
+                    parsed_tracking = json.loads(raw_tracking_url)
+                except (TypeError, ValueError):
+                    parsed_tracking = raw_tracking_url
+                if isinstance(parsed_tracking, list):
+                    for tracker in parsed_tracking:
+                        if isinstance(tracker, (list, tuple)) and len(tracker) >= 2:
+                            candidate = str(tracker[1] or '').strip()
+                            if candidate.startswith(('http://', 'https://')):
+                                tracking_url = candidate
+                                break
+                elif isinstance(parsed_tracking, str):
+                    candidate = parsed_tracking.strip()
+                    if candidate.startswith(('http://', 'https://')):
+                        tracking_url = candidate
+        return {
+            'id': picking.id, 'name': picking.name, 'partner': picking.partner_id.name or '',
+            'partner_id': picking.partner_id.id,
+            'partner_parent': self._operations_parent_name(picking.partner_id),
+            'creation_date': self._fmt(created) if created else '',
+            'scheduled_date': self._fmt(sched) if sched else '',
+            'creation_datetime': created_at.strftime('%d/%m/%Y %H:%M:%S') if created_at else '',
+            'scheduled_datetime': scheduled_at.strftime('%d/%m/%Y %H:%M:%S') if scheduled_at else '',
+            'from_location': picking.location_id.display_name or '',
+            'from_location_id': picking.location_id.id or False,
+            'to_location': picking.location_dest_id.display_name or '',
+            'to_location_id': picking.location_dest_id.id or False,
+            'responsible': picking.user_id.display_name or '',
+            'responsible_id': picking.user_id.id or False,
+            'date_done': self._fmt(completed) if completed else '',
+            'carrier': carrier.display_name if carrier else '',
+            'tracking_reference': tracking_ref or '', 'tracking_url': tracking_url or '',
+            'state': picking.state, 'origin': picking.origin or '',
+            'products_count': len(picking.move_ids),
+            'late': bool(sched and sched < today and picking.state not in ('done', 'cancel')),
+        }
+
+    @api.model
+    def get_operations_payment_refresh(self, payment_id, from_date=False, to_date=False):
+        payment = self.env['account.payment'].browse(int(payment_id)).exists()
+        if not payment:
+            return {'found': False, 'id': int(payment_id)}
+        visible = True
+        if from_date and to_date:
+            pdate = payment.date
+            visible = bool(pdate and str(from_date) <= str(pdate) <= str(to_date))
+        return {'found': True, 'visible': visible, 'row': self._operations_payment_row(payment)}
+
+    @api.model
+    def get_operations_picking_refresh(self, picking_id, from_date=False, to_date=False):
+        picking = self.env['stock.picking'].browse(int(picking_id)).exists()
+        if not picking:
+            return {'found': False, 'id': int(picking_id)}
+        visible = True
+        if from_date and to_date:
+            start = str(from_date)
+            end = str(to_date)
+            created = fields.Date.to_string(picking.create_date.date()) if picking.create_date else ''
+            done = fields.Date.to_string(picking.date_done.date()) if picking.date_done else ''
+            visible = (start <= created <= end) or (start <= done <= end)
+        code = picking.picking_type_id.code
+        return {
+            'found': True, 'visible': visible,
+            'kind': 'delivery' if code == 'outgoing' else 'receipt' if code == 'incoming' else 'internal',
+            'row': self._operations_picking_row(picking),
+            'widgets': self.get_operations_widgets(),
+        }
+
+    @api.model
+    def get_operations_sale_order_refresh(self, order_id, from_date=False, to_date=False):
+        order = self.env['sale.order'].browse(int(order_id)).exists()
+        if not order:
+            return {'found': False, 'id': int(order_id)}
+        visible = True
+        if from_date and to_date:
+            dt = order.create_date.date() if order.create_date else None
+            visible = bool(dt and str(from_date) <= str(dt) <= str(to_date))
+        return {'found': True, 'visible': visible, 'row': self._operations_sale_order_row(order)}
+
+    @api.model
     def validate_picking(self, picking_id):
         picking = self.env['stock.picking'].browse(picking_id)
-        if picking.exists() and picking.state not in ('done', 'cancel'):
-            try:
-                picking.button_validate()
-                self._audit('Validate picking', 'stock.picking', picking.id, picking.name, 'Dashboard validation')
-                return True
-            except Exception:
-                return False
-        return False
+        if not picking.exists() or picking.state in ('done', 'cancel'):
+            return {'ok': False, 'state': picking.state if picking.exists() else False}
+        try:
+            result = picking.button_validate()
+            # Standard Odoo validation may return a wizard action (for example
+            # backorders or immediate transfers). Return it to the Operations
+            # client so the normal Odoo workflow is preserved.
+            if isinstance(result, dict) and result.get('type'):
+                return {
+                    'ok': True,
+                    'state': picking.state,
+                    'action': result,
+                    'message': 'Odoo validation requires an additional step.',
+                }
+            self._audit('Validate picking', 'stock.picking', picking.id, picking.name, 'Dashboard validation')
+            return {'ok': True, 'state': picking.state}
+        except Exception as exc:
+            return {'ok': False, 'state': picking.state, 'message': str(exc)}
+
+    @api.model
+    def save_picking_tracking_reference(self, picking_id, tracking_reference):
+        """Save a Delivery Order tracking reference only when it is currently empty.
+
+        The dashboard intentionally does not allow overwriting an existing tracking
+        reference. Users can still edit the value from the normal stock picking
+        form when their Odoo permissions allow it.
+        """
+        picking = self.env['stock.picking'].browse(int(picking_id))
+        if not picking.exists():
+            return {'ok': False, 'message': 'Delivery Order not found.'}
+        if picking.picking_type_id.code != 'outgoing':
+            return {'ok': False, 'message': 'This tracking field is available only for Delivery Orders.'}
+        if 'carrier_tracking_ref' not in picking._fields:
+            return {'ok': False, 'message': 'Carrier Tracking Reference is unavailable. Please install the Delivery module.'}
+        current = (picking.carrier_tracking_ref or '').strip()
+        if current:
+            return {'ok': False, 'tracking_reference': current, 'message': 'The tracking reference is already set and cannot be overwritten from the dashboard.'}
+        value = str(tracking_reference or '').strip()
+        if not value:
+            return {'ok': False, 'message': 'Tracking Reference cannot be empty.'}
+        picking.write({'carrier_tracking_ref': value[:256]})
+        self._audit('Set tracking reference', 'stock.picking', picking.id, picking.name, 'Operations Dashboard')
+        return {'ok': True, 'tracking_reference': picking.carrier_tracking_ref or value[:256]}
 
     # ═════════════════════════════════════════════════════════════════════
     # FEATURE PACK — insights, exports, approvals, digest, layout
@@ -2285,6 +2454,38 @@ class DashboardData(models.AbstractModel):
                 for p in products]
 
     @api.model
+    def get_partner_options(self, search=''):
+        """Return partner suggestions for the Quick Sale wizard.
+
+        The Business Dashboard used its already-loaded dashboard rows to populate
+        the partner datalist.  The standalone Operations Quick Sale dialog cannot
+        depend on the current dashboard date range, so it needs a direct server-
+        side partner lookup. Search all active contacts/companies by name,
+        reference, phone, or email and return a compact suggestion payload.
+        """
+        search = (search or '').strip()
+        domain = [('active', '=', True)]
+        if search:
+            for token in search.split():
+                domain += [
+                    '|', '|', '|',
+                    ('name', 'ilike', token),
+                    ('ref', 'ilike', token),
+                    ('phone', 'ilike', token),
+                    ('email', 'ilike', token),
+                ]
+
+        partners = self.env['res.partner'].search(
+            domain, limit=50, order='name asc, id asc')
+        return [{
+            'id': partner.id,
+            'name': partner.display_name,
+            'ref': partner.ref or '',
+            'phone': partner.phone or partner.mobile or '',
+            'email': partner.email or '',
+        } for partner in partners]
+
+    @api.model
     def create_quick_sale(self, partner_id, product_id, qty, price_unit=False):
         partner = self.env['res.partner'].browse(partner_id) if partner_id else self.env.ref('base.public_partner', raise_if_not_found=False)
         product = self.env['product.product'].browse(product_id)
@@ -2331,6 +2532,122 @@ class DashboardData(models.AbstractModel):
 
         self._audit('Quick Sale created', 'sale.order', order.id, order.name, 'Created or updated from Quick Sale wizard')
         return {'id': order.id, 'name': order.name, 'merged': merged}
+
+    # ─── Quick Internal Transfer (Operations Dashboard) ────────────────────
+    @api.model
+    def get_internal_location_options(self, search=''):
+        """Search usable internal locations for the Quick Internal Transfer dialog."""
+        search = (search or '').strip()
+        company = self.env.company
+        domain = [
+            ('usage', '=', 'internal'),
+            '|', ('company_id', '=', False), ('company_id', '=', company.id),
+        ]
+        if search:
+            for token in search.split():
+                domain += ['|', ('name', 'ilike', token), ('complete_name', 'ilike', token)]
+        locations = self.env['stock.location'].search(
+            domain, limit=60, order='complete_name asc, id asc')
+        return [{
+            'id': location.id,
+            'name': location.display_name,
+            'complete_name': location.complete_name or location.name or '',
+        } for location in locations]
+
+    @api.model
+    def get_internal_transfer_product_options(self, search=''):
+        """Find active stockable/consumable products (including non-sale products)."""
+        search = (search or '').strip()
+        domain = [('active', '=', True), ('type', 'in', ('product', 'consu'))]
+        if search:
+            for token in search.split():
+                domain += [
+                    '|', '|',
+                    ('name', 'ilike', token),
+                    ('default_code', 'ilike', token),
+                    ('barcode', 'ilike', token),
+                ]
+        products = self.env['product.product'].search(
+            domain, limit=50, order='name asc, id asc')
+        return [{
+            'id': product.id,
+            'name': product.display_name,
+            'default_code': product.default_code or '',
+            'barcode': product.barcode or '',
+            'uom': product.uom_id.name or '',
+        } for product in products]
+
+    @api.model
+    def create_quick_internal_transfer(self, source_location_id, dest_location_id, product_id, qty):
+        """Create and confirm a one-product internal transfer from the quick action dialog.
+
+        Reservation follows the normal stock workflow; the operation remains a real
+        stock.picking record and is completed via Odoo's regular validation process.
+        """
+        try:
+            source_id = int(source_location_id or 0)
+            dest_id = int(dest_location_id or 0)
+            prod_id = int(product_id or 0)
+            quantity = float(qty or 0)
+        except (TypeError, ValueError):
+            return {'error': 'Select valid locations, a product, and a quantity.'}
+
+        if not source_id or not dest_id or not prod_id:
+            return {'error': 'Source location, destination location, and product are required.'}
+        if source_id == dest_id:
+            return {'error': 'Source and destination locations must be different.'}
+        if not math.isfinite(quantity) or quantity <= 0:
+            return {'error': 'Quantity must be a finite number greater than zero.'}
+
+        company = self.env.company
+        Location = self.env['stock.location']
+        source = Location.browse(source_id).exists()
+        destination = Location.browse(dest_id).exists()
+        product = self.env['product.product'].browse(prod_id).exists()
+        if not source or not destination:
+            return {'error': 'One of the selected locations no longer exists.'}
+        if not product or not product.active or product.type not in ('product', 'consu'):
+            return {'error': 'Select an active storable or consumable product.'}
+        for location in (source, destination):
+            if location.usage != 'internal':
+                return {'error': 'Both locations must be internal stock locations.'}
+            if location.company_id and location.company_id != company:
+                return {'error': 'Both locations must belong to the current company or be shared locations.'}
+
+        PickingType = self.env['stock.picking.type']
+        picking_type = PickingType.search([
+            ('code', '=', 'internal'), ('company_id', '=', company.id),
+        ], order='id asc', limit=1)
+        if not picking_type:
+            picking_type = PickingType.search([
+                ('code', '=', 'internal'), ('company_id', '=', False),
+            ], order='id asc', limit=1)
+        if not picking_type:
+            return {'error': 'No Internal Transfer operation type is configured for the current company.'}
+
+        picking = self.env['stock.picking'].create({
+            'picking_type_id': picking_type.id,
+            'company_id': company.id,
+            'location_id': source.id,
+            'location_dest_id': destination.id,
+            'scheduled_date': fields.Datetime.now(),
+            'move_ids': [(0, 0, {
+                'name': product.display_name,
+                'product_id': product.id,
+                'product_uom': product.uom_id.id,
+                'product_uom_qty': quantity,
+                'location_id': source.id,
+                'location_dest_id': destination.id,
+                'company_id': company.id,
+            })],
+        })
+        picking.action_confirm()
+        picking.action_assign()
+        self._audit(
+            'Quick Internal Transfer created', 'stock.picking', picking.id, picking.name,
+            f'Created from Operations Dashboard: {product.display_name} × {quantity:g}; '
+            f'{source.display_name} → {destination.display_name}')
+        return {'id': picking.id, 'name': picking.name, 'state': picking.state}
 
     # ─── Vendor Scorecard ───────────────────────────────────────────────────
     @api.model

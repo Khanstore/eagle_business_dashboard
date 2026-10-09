@@ -1,8 +1,8 @@
 {
     "name": "Advanced Business Dashboard",
-    "version": "18.0.10.11.7",
+    "version": "18.0.10.11.24",
     "author": "SM Ashraf",
-    "depends": ["sale", "purchase", "account", "web", "stock", "mail"],
+    "depends": ["sale", "purchase", "account", "web", "stock", "mail", "delivery"],
     "data": [
         "security/groups.xml",
         "security/ir.model.access.csv",
@@ -14,11 +14,13 @@
         "web.assets_backend": [
             "eagle_business_dashboard/static/src/js/shared_filter_state.js",
             "eagle_business_dashboard/static/src/js/table_tools.js",
+            "eagle_business_dashboard/static/src/js/quick_sale_dialog.js",
             "eagle_business_dashboard/static/src/js/dashboard.js",
             "eagle_business_dashboard/static/src/xml/dashboard.xml",
             "eagle_business_dashboard/static/src/css/dashboard.css",
             "eagle_business_dashboard/static/src/js/finance_dashboard.js",
             "eagle_business_dashboard/static/src/xml/finance_dashboard.xml",
+            "eagle_business_dashboard/static/src/js/quick_internal_transfer_dialog.js",
             "eagle_business_dashboard/static/src/js/operations_dashboard.js",
             "eagle_business_dashboard/static/src/js/payment_form_theme.js",
             "eagle_business_dashboard/static/src/xml/operations_dashboard.xml",

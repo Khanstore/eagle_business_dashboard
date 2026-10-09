@@ -111,10 +111,11 @@
       <!-- OPERATIONS -->
       <div t-if="state.section === 'operations'">
         <p class="eagle-manual-lead">The Operations Dashboard is the warehouse view: what is waiting to go out, what is waiting to come in, and what has slipped.</p>
-        <h3>Operations KPI cards</h3>
-        <p>Pending deliveries, pending receipts, late transfers and transfers completed today. Each card opens the matching list of stock transfers.</p>
-        <h3>Transfer tabs</h3>
-        <p>Below the cards, three tabs separate <b>Deliveries</b>, <b>Receipts</b> and <b>Internal</b> transfers. Use the status filter to narrow a tab to a particular state, for example only those that are ready.</p>
+        <p>Every dashboard data table can be folded/unfolded and sorted by clicking its column headings. Click a heading again to reverse the sort order. Sorting only changes the displayed order, not the Odoo records.</p>
+        <h3>Foldable and sortable tables</h3>
+        <p>Across Business, Finance and Operations, tables start folded to keep the screen compact. Click a card title/chevron or the table-specific fold button to expand it. Click a column heading to sort ascending or descending. The chosen fold and sort preferences are saved separately for each table.</p>
+        <h3>Operations tables</h3>
+        <p>The Operations page shows Orders, Purchase, Quotations, RFQ, Transactions, Delivery Orders, Receiving Orders, and Internal Stock Transfer in separate tables. Each table has its own heading and can be folded or unfolded. Click any column heading to sort the visible rows ascending or descending. The shared date filter applies to the document creation/completion dates used by each table.</p>
         <h3>Validating a transfer</h3>
         <p>Transfers can be validated straight from the list without opening the Inventory app. If a transfer cannot be validated - typically because stock is not available or a required field is missing - Odoo's normal error message is shown and nothing is changed.</p>
         <div class="eagle-manual-warn"><b>Note:</b> validating a transfer moves real stock. It has the same effect as validating it in the Inventory app and cannot be undone by clicking again.</div>
@@ -123,12 +124,13 @@
       <!-- QUICK SALE -->
       <div t-if="state.section === 'quicksale'">
         <p class="eagle-manual-lead">Quick Sale is the floating round button in the bottom corner of the dashboard. It creates a sales order in a few seconds without leaving the screen.</p>
+        <p>The same Quick Sale wizard is used by Business and Operations. Both buttons use identical partner/product searching and order creation behavior.</p>
         <h3>Creating a sale</h3>
         <ol>
-          <li>Click the Quick Sale button to open the panel.</li>
+          <li>Click the Quick Sale floating button to open the wizard.</li>
           <li>Start typing a customer name and pick the match from the list.</li>
           <li>Start typing a product name and pick it from the searchable dropdown.</li>
-          <li>Enter the quantity, and a unit price if you want to override the standard price.</li>
+          <li>Enter the quantity. The wizard uses the product sale price and lets you review the created/updated order in a new tab.</li>
           <li>Confirm. The order is created and the dashboard figures refresh.</li>
         </ol>
         <h3>Orders are merged, not duplicated</h3>
@@ -270,7 +272,7 @@
             <tr><td>Sale</td><td>Quotations (draft), Sales Orders (confirmed)</td></tr>
             <tr><td>Purchase</td><td>Requests for Quotation, Purchase Orders</td></tr>
             <tr><td>Inventory</td><td>Transfers, Warehouses, Stock on Hand</td></tr>
-            <tr><td>Operations</td><td>Operations Dashboard, Delivery Orders, Receipts</td></tr>
+            <tr><td>Operations</td><td>Operations Dashboard, Delivery Orders, Receipts, Internal Stock Transfers</td></tr>
             <tr><td>Accounting</td><td>Customer Invoices, Vendor Bills, Payments, Journals, Chart of Accounts, Journal Entries</td></tr>
             <tr><td>Documentation</td><td>This User Manual, and the Developer Manual for administrators</td></tr>
           </tbody>
@@ -310,7 +312,7 @@
         <div class="eagle-manual-tip">If a problem persists, note what you clicked, what you expected and what happened, and pass it to whoever maintains the module. A screenshot of the screen with its filter bar visible is usually enough to identify the cause.</div>
       </div>
 
-      <div class="eagle-manual-foot">Advanced Business Dashboard - User Manual - version 18.0.3.4</div>
+      <div class="eagle-manual-foot">Advanced Business Dashboard - User Manual - version 18.0.10.11.24</div>
     </div>
   </div>
 </div>

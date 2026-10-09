@@ -299,6 +299,9 @@
 .eagle-saved-filter-chip .fa-times:hover { opacity:1; }
 
 /* ══════════ FAB (Quick Sale) ══════════ */
+.eagle-tracking-input{min-width:150px;max-width:220px;display:inline-block;}
+.eagle-tracking-input:focus{box-shadow:0 0 0 2px rgba(79,91,213,.15);}
+.eagle-app.dark .eagle-tracking-input{background:#111827;color:#e5e7eb;border-color:#374151;}
 .eagle-fab { position:fixed; bottom:24px; right:24px; width:54px; height:54px; border-radius:50%; background:linear-gradient(135deg, var(--eagle-accent), #7c3aed); color:#fff; border:none; box-shadow:0 4px 20px rgba(79,91,213,.4); font-size:22px; cursor:pointer; z-index:300; transition:transform .15s; }
 .eagle-fab:hover { transform:scale(1.08); }
 
@@ -498,3 +501,46 @@
 .dark .eagle-auto-table-toolbar{background:rgba(30,41,59,.7);border-color:#334155}
 .dark .eagle-ledger-security-user-picker{background:#0f172a;border-color:#334155}
 .dark .eagle-ledger-security-user-option:hover{background:#1e293b}
+
+/* Shared dashboard table titles: clickable fold/unfold controls where one table belongs to a card. */
+.eagle-table-title-toggle {
+    cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+}
+.eagle-table-title-toggle:hover { color: #1d4ed8; }
+.eagle-table-title-chevron { font-size: 10px; opacity: .65; transition: transform .16s ease; }
+.eagle-table-title-toggle.is-collapsed .eagle-table-title-chevron { opacity: .9; }
+.eagle-table-title-toggle:focus-visible { outline: 2px solid var(--eagle-accent, #4f5bd5); outline-offset: 3px; border-radius: 4px; }
+.eagle-sortable-auto::after { content: ""; }
+.eagle-table thead th.eagle-sortable-auto { cursor: pointer; user-select: none; }
+.eagle-table thead th.eagle-sortable-auto:hover { color: var(--eagle-accent, #4f5bd5); }
+.eagle-table thead .eagle-auto-sort-icon { font-size: .85em; opacity: .72; margin-left: .3rem; }
+.eagle-app.dark .eagle-table-title-toggle:hover { color: #93c5fd; }
+
+/* Operations floating quick actions */
+.eagle-fab-sale { right: 24px; }
+.eagle-fab-internal { right: 90px; background: linear-gradient(135deg, #0f9f8f, #047857); box-shadow: 0 4px 20px rgba(4,120,87,.35); }
+.eagle-fab-internal:hover { filter: brightness(1.06); }
+.eagle-quick-transfer-modal { max-width: 700px; }
+.eagle-quick-transfer-inner { padding: 20px 24px 22px; }
+.eagle-quick-transfer-inner .qt-field { margin-bottom: 15px; }
+.eagle-quick-transfer-inner .qt-qty-field { max-width: 220px; }
+.eagle-quick-transfer-inner .qt-dropdown { position: absolute; top: calc(100% - 2px); left: 0; right: 0; z-index: 20; max-height: 230px; overflow-y: auto; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 25px rgba(15,23,42,.16); }
+.eagle-quick-transfer-inner .eagle-quick-search-option { display: block; width: 100%; padding: 9px 12px; border: 0; border-bottom: 1px solid #eef0f4; background: #fff; text-align: left; color: #111827; }
+.eagle-quick-transfer-inner .eagle-quick-search-option:last-child { border-bottom: 0; }
+.eagle-quick-transfer-inner .eagle-quick-search-option:hover, .eagle-quick-transfer-inner .eagle-quick-search-option:focus { background: #f3f6ff; outline: 0; }
+.eagle-quick-transfer-inner .qt-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(148,163,184,.28); margin-top: 14px; }
+.eagle-quick-transfer-inner .eagle-qt-action { display: inline-flex; align-items: center; justify-content: center; min-width: 110px; height: 40px; border-radius: 8px; font-weight: 600; border: 1.5px solid #cbd5e1; background: #fff; color: #374151; }
+.eagle-quick-transfer-inner .qt-create { min-width: 170px; border-color: #047857; background: #047857; color: #fff; }
+.eagle-quick-transfer-inner .qt-create:disabled { opacity: .65; cursor: wait; }
+.eagle-quick-transfer-inner .qt-source-status[data-loading="1"], .eagle-quick-transfer-inner .qt-destination-status[data-loading="1"], .eagle-quick-transfer-inner .qt-product-status[data-loading="1"] { color: #64748b !important; }
+.eagle-app.dark .eagle-quick-transfer-inner .qt-dropdown { background: #1a2035; border-color: #3a4568; }
+.eagle-app.dark .eagle-quick-transfer-inner .eagle-quick-search-option { background: #1a2035; color: #e5e7eb; border-color: #2a3350; }
+.eagle-app.dark .eagle-quick-transfer-inner .eagle-quick-search-option:hover { background: #232b45; }
+@media (max-width: 520px) {
+    .eagle-fab-internal { right: 88px; bottom: 22px; }
+    .eagle-fab-sale { right: 20px; bottom: 22px; }
+    .eagle-quick-transfer-inner { padding: 14px; }
+}

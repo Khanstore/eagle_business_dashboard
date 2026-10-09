@@ -1,11 +1,24 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Eagle Business Dashboard — User Manual v1.0.11.7</title>
+<html><head><meta charset="utf-8"><title>Eagle Business Dashboard — User Manual v18.0.10.11.24</title>
 <style>body{font-family:Arial,sans-serif;line-height:1.5;margin:40px;color:#222}h1,h2{color:#18203a}code{background:#f4f4f4;padding:2px 4px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:7px;text-align:right}th:first-child,td:first-child{text-align:left}</style></head>
 <body>
-<h1>Eagle Business Dashboard — User Manual v1.0.11.7</h1>
+<p><strong>Version 18.0.10.11.24:</strong> Table folding and sorting are standardized across Business, Finance, and Operations. All data tables start folded. Click the title/chevron or table-specific fold control to expand a table; click a column heading to sort ascending/descending. Your new fold/sort preferences are saved per table.</p>
+<p><strong>Version 18.0.10.11.23:</strong> The Operations Dashboard Orders and Purchase tables now use reactive fold/unfold controls and column sorting. Click a title/chevron to fold the table, and click a column heading to sort ascending or descending; preferences persist after refreshes.</p>
+<h2>Version 18.0.10.11.22</h2>
+<p>The Quick Sale button and wizard are shared by both dashboards, so partner/product search and order creation behave consistently wherever it is launched.</p>
+<p>Click a table column heading to sort ascending or descending. Use the table heading/chevron to fold or unfold the table; sort preferences remain tied to the table and column rather than its temporary position on the page.</p>
+<p><strong>Version 18.0.10.11.21:</strong> Operations Dashboard now has two floating quick actions: Quick Sale and Quick Internal Transfer. Quick Internal Transfer searches internal source/destination locations and stockable/consumable products, creates a regular Odoo internal transfer, opens it in a new tab, and refreshes only its row. Table sorting reapplies after dashboard updates, while each table keeps its fold and sort preferences.</p>
+<h2>Version 18.0.10.11.22</h2>
+<p>Operations Dashboard Quick Sale/Quick Order now uses the same partner search behavior as Business Dashboard, including direct server-side partner lookup and opening the resulting Sales Order after submission.</p>
+
+<p><strong>Version 18.0.10.11.12:</strong> Operations Dashboard includes the floating + Quick Sale button in the bottom-right corner.</p>
+<p><strong>Menu structure:</strong> Dashboard → Business / Finance / Operation. Business preserves the current Business Dashboard; Finance opens the existing Finance Dashboard; Operation opens the dedicated Operations Dashboard reference layout. Ledger Balance Security is under Settings.</p>
+<h1>Eagle Business Dashboard — User Manual v18.0.10.11.24</h1>
 <p>This document describes the functions and operating behavior of the Eagle Business Dashboard for Odoo 18.</p>
+<h2>Version 18.0.10.11.23 — Operations table controls</h2>
+<p>The Operations Dashboard Orders and Purchase tables now use reactive folding and sorting. Click the table title/chevron to fold or unfold; click any column heading to sort ascending, then descending. Sort choice and open/closed state are preserved in the browser and remain correct after dashboard updates.</p>
 <h2>Navigation</h2>
-<p>Use <b>Business Dashboard → Dashboard</b> to access Business, Finance, and Operations. The Finance dashboard contains invoices, vendor bills, transactions, Journal Balance, Journal Balance Summary, transfers, reconciliation information, cash-flow information, and related finance panels.</p>
+<p>Use <b>Business Dashboard → Dashboard</b> to access Business, Finance, and Operations. The <b>Operations</b> page is a dedicated operational workspace with Orders, Purchase, Quotations, RFQ, Transactions, Delivery Orders, Receiving Orders, Internal Stock Transfer, filters, quick actions, and Team Notes. The Finance dashboard contains invoices, vendor bills, Journal Balance, Journal Balance Summary, transfers, reconciliation information, cash-flow information, and related finance panels.</p>
 <h2>Journal Balance</h2>
 <p>The Journal Balance table contains Journal, Previous Balance, Deposit, Withdraw, Change, and New Balance. The table can be folded/unfolded. Journal rows can expose their related payment transactions when expanded.</p>
 <h2>Ledger Balance Security</h2>
@@ -22,16 +35,19 @@
 </tbody></table>
 <p>The asterisk means: <b>some protected values are excluded</b>. In and Out remain visible as cash-movement totals for transfer checking.</p>
 <h2>Configuring a Journal</h2>
-<p>Open <b>Business Dashboard → Dashboard → Finance → Ledger Balance Security</b>. Select a journal, enable <b>Mask balances</b>, select the users who may see the balance, and save the configuration.</p>
+<p>Open <b>Business Dashboard → Settings → Ledger Balance Security</b>. Select a journal, enable <b>Mask balances</b>, select the users who may see the balance, and save the configuration.</p>
+<h2>Operations Workspace</h2>
+<p>The Operations menu opens the dedicated Operations workspace. It uses the same Eagle dashboard styling and shared date/partner filter state as the other dashboards. Orders, Purchase, Quotations, RFQ, Transactions, Delivery Orders, Receiving Orders, and Internal Stock Transfers can be opened from the workspace. Internal Stock Transfer displays source and destination locations, creation and scheduled timestamps, status, and responsible user. New Sales Order, New Purchase Order, Receive Money, Send Money, Quick Sale, and Quick Internal Transfer actions are available directly from the page. Use Quick Internal Transfer to select internal source and destination locations, choose a stockable/consumable product and quantity, create a transfer, and open it for review.</p>
 <h2>Testing</h2>
 <p>Use a non-administrator account that is not listed as an Approved User to verify masking. Use a second account that is explicitly approved to verify unmasked visibility. To verify partial aggregate masking, protect one contributing journal and leave at least one other contributing journal visible.</p>
 <h2>Printing and Export</h2>
 <p>Journal Balance printing and CSV export apply the same user-specific ledger visibility rule.</p>
 <h2>Sales Trend Graph</h2>
-<p>The Sales Trend panel is a graph rather than a simple bar list. Use the <b>View by</b> controls to switch between <b>Day</b>, <b>Week</b>, <b>Month</b>, <b>Quarter</b>, and <b>Year</b>. The selected scale is requested from the server and the graph fills periods with zero sales so that gaps remain visible on the time axis.</p>
+<p>The Sales Trend panel is a graph rather than a simple bar list. Date-dependent Business Dashboard highlights, including Selected Period Highs &amp; Lows, refresh whenever the From/To range changes. Use the <b>View by</b> controls to switch between <b>Day</b>, <b>Week</b>, <b>Month</b>, <b>Quarter</b>, and <b>Year</b>. The selected scale is requested from the server and the graph fills periods with zero sales so that gaps remain visible on the time axis.</p>
 <p>The graph automatically scales its Y-axis to the highest value in the selected range. Hovering a point shows the period and exact sales amount. The total shown above the graph is the sum of the periods returned for the selected scale.</p>
 <h2>Dashboard Tables</h2>
 <p>Dashboard tables support folding/unfolding and sorting of displayed columns where table controls are available.</p>
+<h2>Payment Transaction Actions</h2><p>In the Finance transaction tables, a <b>Validate</b> button is shown only for draft payments. For payments already in <code>In Process</code>, the dashboard shows <b>Match</b> instead. Selecting <b>Match</b> opens the standard Odoo payment record so the payment can be completed through the normal bank matching or reconciliation workflow. An <code>In Process</code> payment is already posted; it must not be posted again.</p>
 <h2>Dashboard Record Actions</h2><p>The Business Dashboard Transactions area provides <b>Receive</b> and <b>Send</b> buttons that open the standard Odoo payment form with the appropriate payment direction. The Orders and Purchases tables also provide <b>New</b> buttons for creating a sales order or purchase order. These buttons use standard Odoo forms and workflows.</p>
 <h2>Quick Order</h2>
 <p>Quick Order searches the product catalog on the server by product name, internal reference, and barcode.</p>
@@ -44,4 +60,6 @@
 <p>After upgrading the module, restart Odoo when required and refresh the browser assets with a hard refresh.</p>
 <h2>Payment Form Appearance</h2>
 <p><code>static/src/js/payment_form_theme.js</code> applies presentation-only styling to Odoo 18 payment forms. The styling does not provide any security boundary.</p>
+<h2>Operations Dashboard — Delivery Orders</h2>
+<p><strong>Version 18.0.10.11.16:</strong> Delivery Orders now show Carrier and Tracking Reference. When a Delivery Order has no tracking reference, the Operations Dashboard provides an inline field where the user can enter and save one. Existing tracking references are displayed read-only in the dashboard. The Status value is an action button while the transfer is not Done or Cancelled; clicking it runs the standard Odoo picking validation workflow. Done and Cancelled transfers remain non-action badges.</p>
 </body></html>
