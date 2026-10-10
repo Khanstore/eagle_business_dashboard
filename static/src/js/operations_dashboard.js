@@ -1,7 +1,6 @@
 /** @odoo-module **/
 import { registry } from "@web/core/registry";
-import { Component, onWillStart, onMounted, onWillDestroy, onPatched, useState } from "@odoo/owl";
-import { enhanceEagleTables } from "./table_tools";
+import { Component, onWillStart, onMounted, onWillDestroy, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { sharedFilterState } from "./shared_filter_state";
 import { EagleQuickSaleDialog } from "./quick_sale_dialog";
@@ -15,6 +14,48 @@ import { EagleQuickInternalTransferDialog } from "./quick_internal_transfer_dial
  * the day-to-day sales/purchase/payment/warehouse workflow shown in the
  * Operations menu mock-up.
  */
+const DELIVERY_COLUMN_DEFINITIONS = [
+    { key: "name", label: "Reference", sortKey: "name" },
+    { key: "partner", label: "Customer", sortKey: "partner" },
+    { key: "partner_mobile", label: "Customer Mobile", sortKey: "partner_mobile" },
+    { key: "creation_date", label: "Creation Date", sortKey: "creation_date" },
+    { key: "date_done", label: "Complete Date", sortKey: "date_done" },
+    { key: "carrier", label: "Carrier", sortKey: "carrier" },
+    { key: "tracking_reference", label: "Tracking Reference", sortKey: "tracking_reference" },
+    { key: "state", label: "Status", sortKey: "state" },
+];
+const DEFAULT_DELIVERY_COLUMN_ORDER = DELIVERY_COLUMN_DEFINITIONS.map((column) => column.key);
+
+const OPERATIONS_SORT_ACCESSORS = {
+    quotations: {
+        name: (r) => r.name, partner: (r) => r.partner, date: (r) => r.date,
+        status: (r) => r.status, amount: (r) => r.amount,
+    },
+    rfq: {
+        name: (r) => r.name, partner: (r) => r.partner, date: (r) => r.date,
+        status: (r) => r.status, amount: (r) => r.amount,
+    },
+    transactions: {
+        name: (r) => r.name, date: (r) => r.date, partner: (r) => r.partner,
+        ledger: (r) => r.ledger, received: (r) => r.received, paid: (r) => r.paid, state: (r) => r.state,
+    },
+    deliveries: {
+        name: (r) => r.name, partner: (r) => r.partner, partner_mobile: (r) => r.partner_mobile,
+        creation_date: (r) => r.creation_date, date_done: (r) => r.date_done, carrier: (r) => r.carrier,
+        tracking_reference: (r) => r.tracking_reference, state: (r) => r.state,
+    },
+    receipts: {
+        name: (r) => r.name, partner: (r) => r.partner, creation_date: (r) => r.creation_date,
+        date_done: (r) => r.date_done, state: (r) => r.state,
+    },
+    internal: {
+        name: (r) => r.name, from_location: (r) => r.from_location, to_location: (r) => r.to_location,
+        creation_datetime: (r) => r.creation_datetime || r.creation_date,
+        scheduled_datetime: (r) => r.scheduled_datetime || r.scheduled_date,
+        state: (r) => r.state, responsible: (r) => r.responsible,
+    },
+};
+
 class OperationsDashboard extends Component {
     setup() {
         this.orm = useService("orm");
@@ -36,8 +77,10 @@ class OperationsDashboard extends Component {
 
         const readStoredFold = (key) => {
             try {
-                const value = localStorage.getItem(`eagle_operations_managed_fold_v2_${key}`);
-                return value === null ? false : value === "true";
+                // v4 intentionally resets table fold choices from older releases,
+                // ensuring the requested Operations tables start folded on upgrade.
+                const value = localStorage.getItem(`eagle_operations_managed_fold_v4_${key}`);
+                return value === "true";
             } catch (e) {
                 return false;
             }
@@ -48,6 +91,16 @@ class OperationsDashboard extends Component {
                 if (value && typeof value.key === "string" && ["asc", "desc"].includes(value.direction)) return value;
             } catch (e) {}
             return { key: "", direction: "asc" };
+        };
+        const readDeliveryColumnOrder = () => {
+            try {
+                const stored = JSON.parse(localStorage.getItem("eagle_operations_delivery_column_order_v1") || "null");
+                if (Array.isArray(stored)) {
+                    const valid = stored.filter((key, index) => DEFAULT_DELIVERY_COLUMN_ORDER.includes(key) && stored.indexOf(key) === index);
+                    return [...valid, ...DEFAULT_DELIVERY_COLUMN_ORDER.filter((key) => !valid.includes(key))];
+                }
+            } catch (e) {}
+            return [...DEFAULT_DELIVERY_COLUMN_ORDER];
         };
 
         this.state = useState({
@@ -85,18 +138,30 @@ class OperationsDashboard extends Component {
             validatingPickingId: 0,
             showCommandPalette: false,
             commandQuery: "",
-            sortKey: "",
-            sortOrder: "asc",
-            // These two high-traffic tables use Owl-owned controls so clicks and
-            // row ordering survive virtual-DOM patches and targeted refreshes.
+            // Every Operations table owns its controls in Owl state. All tables
+            // start folded after upgrade and sort reactively, surviving patches
+            // and targeted record refreshes without DOM row manipulation.
             tableSectionsOpen: {
                 orders: readStoredFold("orders"),
                 purchases: readStoredFold("purchases"),
+                quotations: readStoredFold("quotations"),
+                rfq: readStoredFold("rfq"),
+                transactions: readStoredFold("transactions"),
+                deliveries: readStoredFold("deliveries"),
+                receipts: readStoredFold("receipts"),
+                internal: readStoredFold("internal"),
             },
             tableSort: {
                 orders: readStoredSort("orders"),
                 purchases: readStoredSort("purchases"),
+                quotations: readStoredSort("quotations"),
+                rfq: readStoredSort("rfq"),
+                transactions: readStoredSort("transactions"),
+                deliveries: readStoredSort("deliveries"),
+                receipts: readStoredSort("receipts"),
+                internal: readStoredSort("internal"),
             },
+            deliveryColumnOrder: readDeliveryColumnOrder(),
             lastUpdated: "",
         });
 
@@ -120,10 +185,7 @@ class OperationsDashboard extends Component {
             window.addEventListener("keydown", this._keydownHandler);
             this.heartbeatNow();
             this._heartbeatTimer = setInterval(() => this.heartbeatNow(), 30000);
-            enhanceEagleTables(this.el, "operations");
         });
-
-        onPatched(() => enhanceEagleTables(this.el, "operations"));
 
         onWillDestroy(() => {
             if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
@@ -350,7 +412,6 @@ class OperationsDashboard extends Component {
                 .map(([id, name]) => ({ id: String(id), name }))
                 .sort((a, b) => a.name.localeCompare(b.name));
 
-            if (this.state.sortKey) this._applySort();
             this.state.lastUpdated = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         } catch (e) {
             console.error("Operations workspace load error:", e);
@@ -390,12 +451,67 @@ class OperationsDashboard extends Component {
 
     get sortedOrders() { return this._sortOperationsRows(this.filteredOrders, "orders"); }
     get sortedPurchases() { return this._sortOperationsRows(this.filteredPurchases, "purchases"); }
+    get sortedQuotations() { return this._sortOperationsRows(this.filteredQuotations, "quotations"); }
+    get sortedRfq() { return this._sortOperationsRows(this.filteredRfq, "rfq"); }
+    get sortedTransactions() { return this._sortOperationsRows(this.filteredTransactions, "transactions"); }
+    get sortedDeliveries() { return this._sortOperationsRows(this.filteredDeliveries, "deliveries"); }
+    get sortedReceipts() { return this._sortOperationsRows(this.filteredReceipts, "receipts"); }
+    get sortedInternal() { return this._sortOperationsRows(this.filteredInternal, "internal"); }
+
+    get showDeliveryCreationDateColumn() {
+        // The Today preset makes the Creation Date redundant in this table only.
+        // Other Operations tables keep their normal date-column behavior.
+        return this.state.active_preset !== "today";
+    }
+
+    get deliveryColumns() {
+        return this.state.deliveryColumnOrder
+            .map((key) => DELIVERY_COLUMN_DEFINITIONS.find((column) => column.key === key))
+            .filter((column) => Boolean(column) && (this.showDeliveryCreationDateColumn || column.key !== "creation_date"));
+    }
+
+    onDeliveryColumnDragStart(ev, columnKey) {
+        this._deliveryColumnDragKey = columnKey;
+        if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = "move";
+            ev.dataTransfer.setData("text/plain", columnKey);
+        }
+        if (ev.currentTarget) ev.currentTarget.classList.add("is-dragging");
+    }
+
+    onDeliveryColumnDragEnd(ev) {
+        this._deliveryColumnDragKey = null;
+        if (ev.currentTarget) ev.currentTarget.classList.remove("is-dragging");
+    }
+
+    onDeliveryColumnDragOver(ev) {
+        ev.preventDefault();
+        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+    }
+
+    onDeliveryColumnDrop(ev, targetKey) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const sourceKey = (ev.dataTransfer && ev.dataTransfer.getData("text/plain")) || this._deliveryColumnDragKey;
+        this._deliveryColumnDragKey = null;
+        if (!sourceKey || sourceKey === targetKey) return;
+        const order = [...this.state.deliveryColumnOrder];
+        const sourceIndex = order.indexOf(sourceKey);
+        const targetIndex = order.indexOf(targetKey);
+        if (sourceIndex < 0 || targetIndex < 0) return;
+        order.splice(sourceIndex, 1);
+        order.splice(targetIndex, 0, sourceKey);
+        this.state.deliveryColumnOrder = order;
+        try {
+            localStorage.setItem("eagle_operations_delivery_column_order_v1", JSON.stringify(order));
+        } catch (e) {}
+    }
 
     toggleOperationsTable(key) {
         if (!(key in this.state.tableSectionsOpen)) return;
         this.state.tableSectionsOpen[key] = !this.state.tableSectionsOpen[key];
         try {
-            localStorage.setItem(`eagle_operations_managed_fold_v2_${key}`, String(this.state.tableSectionsOpen[key]));
+            localStorage.setItem(`eagle_operations_managed_fold_v4_${key}`, String(this.state.tableSectionsOpen[key]));
         } catch (e) {}
     }
 
@@ -406,6 +522,9 @@ class OperationsDashboard extends Component {
     }
 
     sortOperationsTable(tableKey, field) {
+        const accessors = OPERATIONS_SORT_ACCESSORS[tableKey];
+        // Reject unknown fields rather than persist a setting which has no row value.
+        if (!accessors || typeof accessors[field] !== "function") return;
         const current = this.state.tableSort[tableKey];
         if (!current) return;
         const direction = current.key === field && current.direction === "asc" ? "desc" : "asc";
@@ -417,7 +536,8 @@ class OperationsDashboard extends Component {
 
     _sortOperationsRows(rows, tableKey) {
         const setting = this.state.tableSort[tableKey];
-        if (!setting || !setting.key) return rows;
+        const accessors = OPERATIONS_SORT_ACCESSORS[tableKey];
+        if (!setting || !setting.key || !accessors || typeof accessors[setting.key] !== "function") return rows;
         const direction = setting.direction === "desc" ? -1 : 1;
         const comparable = (value) => {
             if (value === null || value === undefined || value === "") return { type: "empty", value: "" };
@@ -432,12 +552,20 @@ class OperationsDashboard extends Component {
             return { type: "text", value: raw };
         };
         return [...rows].sort((left, right) => {
-            const a = comparable(left[setting.key]);
-            const b = comparable(right[setting.key]);
+            const a = comparable(accessors[setting.key](left));
+            const b = comparable(accessors[setting.key](right));
+            // Keep empty values at the end in either direction.
             if (a.type === "empty" && b.type !== "empty") return 1;
             if (b.type === "empty" && a.type !== "empty") return -1;
-            if (a.type === "number" && b.type === "number") return (a.value - b.value) * direction;
-            return String(a.value).localeCompare(String(b.value), undefined, { numeric: true, sensitivity: "base" }) * direction;
+            let compared = 0;
+            if (a.type === "number" && b.type === "number") {
+                compared = a.value === b.value ? 0 : (a.value < b.value ? -1 : 1);
+            } else {
+                compared = String(a.value).localeCompare(String(b.value), undefined, { numeric: true, sensitivity: "base" });
+            }
+            if (compared) return compared * direction;
+            // Deterministic tie-breaker helps the table visibly maintain a stable order.
+            return String(left.name || left.id || "").localeCompare(String(right.name || right.id || ""), undefined, { numeric: true, sensitivity: "base" });
         });
     }
 
@@ -456,23 +584,6 @@ class OperationsDashboard extends Component {
 
     get txTotalReceived() { return this._sum(this.filteredTransactions, "received"); }
     get txTotalPaid() { return this._sum(this.filteredTransactions, "paid"); }
-
-    sortTransactions(key) {
-        this.state.sortOrder = this.state.sortKey === key && this.state.sortOrder === "asc" ? "desc" : "asc";
-        this.state.sortKey = key;
-        this._applySort();
-    }
-
-    _applySort() {
-        const k = this.state.sortKey;
-        const order = this.state.sortOrder === "asc" ? 1 : -1;
-        this.state.transactions.sort((a, b) => {
-            const av = a[k] ?? "";
-            const bv = b[k] ?? "";
-            if (typeof av === "number" && typeof bv === "number") return (av - bv) * order;
-            return String(av).localeCompare(String(bv)) * order;
-        });
-    }
 
     _writeCSV(rows, filename) {
         if (!rows || !rows.length) return;

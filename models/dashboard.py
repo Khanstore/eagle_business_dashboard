@@ -1977,6 +1977,7 @@ class DashboardData(models.AbstractModel):
         return {
             'id': picking.id, 'name': picking.name, 'partner': picking.partner_id.name or '',
             'partner_id': picking.partner_id.id,
+            'partner_mobile': (picking.partner_id.mobile or picking.partner_id.commercial_partner_id.mobile or '') if picking.partner_id else '',
             'partner_parent': self._operations_parent_name(picking.partner_id),
             'creation_date': self._fmt(created) if created else '',
             'scheduled_date': self._fmt(sched) if sched else '',

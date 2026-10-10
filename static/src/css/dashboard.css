@@ -544,3 +544,12 @@
     .eagle-fab-sale { right: 20px; bottom: 22px; }
     .eagle-quick-transfer-inner { padding: 14px; }
 }
+
+
+/* Operations Delivery Orders: reorder columns by dragging the handle. */
+.eagle-delivery-column-header { white-space: nowrap; }
+.eagle-column-drag-handle { display:inline-flex; align-items:center; justify-content:center; margin-right:6px; color:#9ca3af; cursor:grab; touch-action:none; }
+.eagle-column-drag-handle:hover { color:var(--eagle-accent, #4f5bd5); }
+.eagle-column-drag-handle:active, .eagle-column-drag-handle.is-dragging { cursor:grabbing; opacity:.55; }
+.eagle-sort-heading { cursor:pointer; user-select:none; }
+.eagle-sort-heading:hover { color:var(--eagle-accent, #4f5bd5); }

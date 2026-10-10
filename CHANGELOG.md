@@ -1,3 +1,36 @@
+## 18.0.10.11.29 — Delivery Orders date column for Today filter
+- Hide the Creation Date column in Operations → Delivery Orders when the shared date preset is Today.
+- Show Creation Date again when a different preset or custom date range is selected.
+- This change is limited to the Delivery Orders table; other tables and date filtering/data inclusion are unchanged.
+- Preserved the saved drag-and-drop column order, sorting, Customer Mobile, tracking, and status actions.
+- Updated manuals and bumped module version.
+
+## 18.0.10.11.28 — Delivery customer mobile and draggable columns
+- Added a Customer Mobile field to each Delivery Orders row, using the shipping contact's mobile number and falling back to the commercial partner's mobile number.
+- Made every Delivery Orders column draggable left/right using a dedicated drag handle; the whole column (header and cells) reorders together.
+- Column order is saved in browser storage and restored on subsequent visits; sorting remains available by clicking each column label, including Customer Mobile.
+- Customer Mobile is included in Delivery Orders CSV export and uses a `tel:` link when a number is available.
+- Preserved the existing delivery date rules, tracking reference editor/link, status validation, folding, and targeted row refresh behavior.
+- Updated manuals and bumped module version.
+
+## 18.0.10.11.27 — Quick Internal Transfer dropdown defaults
+- Quick Internal Transfer opens with the Source, Destination, and Product suggestion dropdowns closed.
+- Removed automatic option preloading that made all option lists appear when the wizard opened.
+- Suggestions now open when the user clicks a field or types a query; focusing the next field after choosing an option no longer opens its dropdown automatically.
+- Updated user/developer manuals and bumped the module version.
+
+## 18.0.10.11.26 — Operations table controls verification
+- Reset the Operations fold preference namespace so Quotations, RFQ, Transactions, Delivery Orders, Receiving Orders, and Internal Stock Transfer start folded after upgrade; the remaining Operations tables also retain the folded default.
+- Added explicit per-table sortable-field maps for all six requested tables so every visible heading is bound to the correct serialized field.
+- Kept amounts numeric, dates chronological, empty cells last, and sorting direction persisted across filtering, reloads, and targeted refreshes.
+- Updated user/developer manuals and module version.
+
+
+## 18.0.10.11.25 — Operations table folding and sorting
+- All eight Operations data tables now use Owl-managed folding and sorting: Orders, Purchase, Quotations, RFQ, Transactions, Delivery Orders, Receiving Orders, and Internal Stock Transfer.
+- Every visible column is sortable in ascending/descending order using the actual row data; numeric amounts sort numerically and dates chronologically.
+- All Operations tables initialize folded after upgrade using a new fold-preference namespace, then persist each table's open/closed state.
+- Sorting is reactive and survives data reloads and targeted row refreshes; Operations no longer relies on DOM-only row reordering.
 ## 18.0.10.11.24
 - Standardized table folding and sorting across Business, Finance, and Operations dashboards.
 - Tables start folded by default; single-table cards use the title/chevron, while nested or multi-table cards get an individual fold control.

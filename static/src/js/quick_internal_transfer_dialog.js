@@ -26,11 +26,10 @@ export class EagleQuickInternalTransferDialog {
         this.ids = { source: 0, destination: 0, product: 0 };
         this.submitBusy = false;
         this._build();
-        // Focusing Source triggers its own first search; load the other controls
-        // explicitly so each role issues only one initial request.
+        // Keep all suggestion lists closed when the dialog opens. Source gets
+        // focus for keyboard convenience, but options load only after the user
+        // clicks a field or starts typing in it.
         this.controls.source.input.focus();
-        this._loadOptions("destination", "");
-        this._loadOptions("product", "");
     }
 
     close() {
@@ -70,7 +69,7 @@ export class EagleQuickInternalTransferDialog {
                             <label class="form-label small text-muted" for="eagle-qt-source">Source Location <span class="text-danger">*</span></label>
                             <div class="position-relative">
                                 <input id="eagle-qt-source" type="text" class="form-control form-control-sm qt-source" autocomplete="off" placeholder="Search source location...">
-                                <div class="qt-source-status text-muted small mt-1">Loading internal locations…</div>
+                                <div class="qt-source-status text-muted small mt-1">Click or type to search locations.</div>
                                 <div class="qt-source-list eagle-quick-search-dropdown qt-dropdown" style="display:none"></div>
                             </div>
                         </div>
@@ -78,7 +77,7 @@ export class EagleQuickInternalTransferDialog {
                             <label class="form-label small text-muted" for="eagle-qt-destination">Destination Location <span class="text-danger">*</span></label>
                             <div class="position-relative">
                                 <input id="eagle-qt-destination" type="text" class="form-control form-control-sm qt-destination" autocomplete="off" placeholder="Search destination location...">
-                                <div class="qt-destination-status text-muted small mt-1">Loading internal locations…</div>
+                                <div class="qt-destination-status text-muted small mt-1">Click or type to search locations.</div>
                                 <div class="qt-destination-list eagle-quick-search-dropdown qt-dropdown" style="display:none"></div>
                             </div>
                         </div>
@@ -86,7 +85,7 @@ export class EagleQuickInternalTransferDialog {
                             <label class="form-label small text-muted" for="eagle-qt-product">Product <span class="text-danger">*</span></label>
                             <div class="position-relative">
                                 <input id="eagle-qt-product" type="text" class="form-control form-control-sm qt-product" autocomplete="off" placeholder="Search product name, reference, or barcode...">
-                                <div class="qt-product-status text-muted small mt-1">Loading stockable products…</div>
+                                <div class="qt-product-status text-muted small mt-1">Click or type to search products.</div>
                                 <div class="qt-product-list eagle-quick-search-dropdown qt-dropdown" style="display:none"></div>
                             </div>
                         </div>
@@ -115,7 +114,10 @@ export class EagleQuickInternalTransferDialog {
             const status = backdrop.querySelector(`.qt-${role}-status`);
             this.controls[role] = { input, dropdown, status };
             input.addEventListener("input", (ev) => this._onInput(role, ev));
-            input.addEventListener("focus", () => {
+            // Focus alone (including automatic focus after selecting the prior
+            // field) must not open the suggestion menu. A deliberate click or
+            // typing opens it; Escape closes it until the next interaction.
+            input.addEventListener("click", () => {
                 if (dropdown.style.display !== "block") this._loadOptions(role, input.value || "");
             });
             input.addEventListener("keydown", (ev) => this._onKeydown(role, ev));

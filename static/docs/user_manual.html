@@ -1,7 +1,12 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Eagle Business Dashboard — User Manual v18.0.10.11.24</title>
+<html><head><meta charset="utf-8"><title>Eagle Business Dashboard — User Manual v18.0.10.11.29</title>
 <style>body{font-family:Arial,sans-serif;line-height:1.5;margin:40px;color:#222}h1,h2{color:#18203a}code{background:#f4f4f4;padding:2px 4px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:7px;text-align:right}th:first-child,td:first-child{text-align:left}</style></head>
 <body>
+<p><strong>Version 18.0.10.11.28:</strong> The Delivery Orders table includes Customer Mobile. Use the small grip icon at the left of a column heading to drag that column left or right; the full column, including its data cells, moves as one. Your column order is saved in the browser. Click a column label to sort ascending/descending. Customer Mobile is clickable to start a phone call when your browser/device supports <code>tel:</code> links.</p>
+<p><strong>Version 18.0.10.11.27:</strong> In Quick Internal Transfer, the Source, Destination, and Product suggestions are closed when the wizard first opens. Click a field or start typing to open its options; moving focus to the next field does not open its dropdown automatically.</p>
+
+<p><strong>Version 18.0.10.11.26:</strong> Quotations, RFQ, Transactions, Delivery Orders, Receiving Orders, and Internal Stock Transfer start folded by default. Every visible column in these tables is sortable by clicking the heading; click again to reverse direction. Sorting handles amounts numerically, dates chronologically, and preserves preferences after refreshes and filter changes. All Operations tables start folded after this upgrade.</p>
+
 <p><strong>Version 18.0.10.11.24:</strong> Table folding and sorting are standardized across Business, Finance, and Operations. All data tables start folded. Click the title/chevron or table-specific fold control to expand a table; click a column heading to sort ascending/descending. Your new fold/sort preferences are saved per table.</p>
 <p><strong>Version 18.0.10.11.23:</strong> The Operations Dashboard Orders and Purchase tables now use reactive fold/unfold controls and column sorting. Click a title/chevron to fold the table, and click a column heading to sort ascending or descending; preferences persist after refreshes.</p>
 <h2>Version 18.0.10.11.22</h2>
@@ -13,7 +18,7 @@
 
 <p><strong>Version 18.0.10.11.12:</strong> Operations Dashboard includes the floating + Quick Sale button in the bottom-right corner.</p>
 <p><strong>Menu structure:</strong> Dashboard → Business / Finance / Operation. Business preserves the current Business Dashboard; Finance opens the existing Finance Dashboard; Operation opens the dedicated Operations Dashboard reference layout. Ledger Balance Security is under Settings.</p>
-<h1>Eagle Business Dashboard — User Manual v18.0.10.11.24</h1>
+<h1>Eagle Business Dashboard — User Manual v18.0.10.11.29</h1>
 <p>This document describes the functions and operating behavior of the Eagle Business Dashboard for Odoo 18.</p>
 <h2>Version 18.0.10.11.23 — Operations table controls</h2>
 <p>The Operations Dashboard Orders and Purchase tables now use reactive folding and sorting. Click the table title/chevron to fold or unfold; click any column heading to sort ascending, then descending. Sort choice and open/closed state are preserved in the browser and remain correct after dashboard updates.</p>
@@ -61,5 +66,7 @@
 <h2>Payment Form Appearance</h2>
 <p><code>static/src/js/payment_form_theme.js</code> applies presentation-only styling to Odoo 18 payment forms. The styling does not provide any security boundary.</p>
 <h2>Operations Dashboard — Delivery Orders</h2>
+<p><strong>Delivery Orders:</strong> The table now also displays Customer Mobile. Use the drag handle beside a column heading to reorder Delivery Orders columns; the chosen order is remembered in the browser. All column labels remain sortable.
+</p>
 <p><strong>Version 18.0.10.11.16:</strong> Delivery Orders now show Carrier and Tracking Reference. When a Delivery Order has no tracking reference, the Operations Dashboard provides an inline field where the user can enter and save one. Existing tracking references are displayed read-only in the dashboard. The Status value is an action button while the transfer is not Done or Cancelled; clicking it runs the standard Odoo picking validation workflow. Done and Cancelled transfers remain non-action badges.</p>
 </body></html>

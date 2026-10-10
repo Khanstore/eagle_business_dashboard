@@ -174,12 +174,12 @@
 
       <!-- Quotations -->
       <div class="eagle-card">
-        <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-file-o"/>Quotations <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredQuotations.length"/></span><i class="fa fa-chevron-up eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportQuotes" title="Export CSV"><i class="fa fa-download"/></button></div>
-        <div class="eagle-table-wrap"><table class="eagle-table">
-          <thead><tr><th>Quotation</th><th>Partner</th><th t-if="showDateColumn">Date</th><th>Status</th><th class="text-end">Amount</th></tr></thead>
+        <div class="eagle-card-header"><h4 t-attf-class="eagle-card-title eagle-table-title-toggle #{state.tableSectionsOpen.quotations ? '' : 'is-collapsed'}" role="button" tabindex="0" t-att-aria-expanded="state.tableSectionsOpen.quotations" t-on-click="()=>this.toggleOperationsTable('quotations')" t-on-keydown="(ev)=>this.onOperationsTableTitleKeydown(ev,'quotations')"><i class="fa fa-file-o"/>Quotations <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredQuotations.length"/></span><i t-attf-class="fa #{state.tableSectionsOpen.quotations ? 'fa-chevron-up' : 'fa-chevron-down'} eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportQuotes" title="Export CSV"><i class="fa fa-download"/></button></div>
+        <div t-attf-class="eagle-table-wrap #{state.tableSectionsOpen.quotations ? '' : 'eagle-table-hidden'}"><table class="eagle-table" data-eagle-managed-controls="1">
+          <thead><tr><th class="sortable" t-on-click="()=>this.sortOperationsTable('quotations','name')">Quotation <i t-attf-class="fa #{state.tableSort.quotations.key==='name' ? (state.tableSort.quotations.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('quotations','partner')">Partner <i t-attf-class="fa #{state.tableSort.quotations.key==='partner' ? (state.tableSort.quotations.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><t t-if="showDateColumn"><th class="sortable" t-on-click="()=>this.sortOperationsTable('quotations','date')">Date <i t-attf-class="fa #{state.tableSort.quotations.key==='date' ? (state.tableSort.quotations.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th></t><th class="sortable" t-on-click="()=>this.sortOperationsTable('quotations','status')">Status <i t-attf-class="fa #{state.tableSort.quotations.key==='status' ? (state.tableSort.quotations.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable text-end" t-on-click="()=>this.sortOperationsTable('quotations','amount')">Amount <i t-attf-class="fa #{state.tableSort.quotations.key==='amount' ? (state.tableSort.quotations.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th></tr></thead>
           <tbody>
             <t t-if="filteredQuotations.length===0"><tr><td t-att-colspan="showDateColumn?5:4" class="text-center text-muted py-3">No quotations found.</td></tr></t>
-            <t t-foreach="filteredQuotations" t-as="q" t-key="q.id"><tr>
+            <t t-foreach="sortedQuotations" t-as="q" t-key="q.id"><tr>
               <td><a class="link" href="#" t-on-click.prevent="()=>this.openOrder(q.id)"><t t-esc="q.name"/></a></td>
               <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(q.partner_id)"><t t-esc="q.partner"/></a></td>
               <td t-if="showDateColumn"><t t-esc="q.date"/></td>
@@ -193,12 +193,12 @@
 
       <!-- RFQ -->
       <div class="eagle-card">
-        <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-envelope-o"/>RFQ <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredRfq.length"/></span><i class="fa fa-chevron-up eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportRfq" title="Export CSV"><i class="fa fa-download"/></button></div>
-        <div class="eagle-table-wrap"><table class="eagle-table">
-          <thead><tr><th>Order</th><th>Partner</th><th t-if="showDateColumn">Date</th><th>Status</th><th class="text-end">Amount</th></tr></thead>
+        <div class="eagle-card-header"><h4 t-attf-class="eagle-card-title eagle-table-title-toggle #{state.tableSectionsOpen.rfq ? '' : 'is-collapsed'}" role="button" tabindex="0" t-att-aria-expanded="state.tableSectionsOpen.rfq" t-on-click="()=>this.toggleOperationsTable('rfq')" t-on-keydown="(ev)=>this.onOperationsTableTitleKeydown(ev,'rfq')"><i class="fa fa-envelope-o"/>RFQ <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredRfq.length"/></span><i t-attf-class="fa #{state.tableSectionsOpen.rfq ? 'fa-chevron-up' : 'fa-chevron-down'} eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportRfq" title="Export CSV"><i class="fa fa-download"/></button></div>
+        <div t-attf-class="eagle-table-wrap #{state.tableSectionsOpen.rfq ? '' : 'eagle-table-hidden'}"><table class="eagle-table" data-eagle-managed-controls="1">
+          <thead><tr><th class="sortable" t-on-click="()=>this.sortOperationsTable('rfq','name')">Order <i t-attf-class="fa #{state.tableSort.rfq.key==='name' ? (state.tableSort.rfq.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('rfq','partner')">Partner <i t-attf-class="fa #{state.tableSort.rfq.key==='partner' ? (state.tableSort.rfq.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><t t-if="showDateColumn"><th class="sortable" t-on-click="()=>this.sortOperationsTable('rfq','date')">Date <i t-attf-class="fa #{state.tableSort.rfq.key==='date' ? (state.tableSort.rfq.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th></t><th class="sortable" t-on-click="()=>this.sortOperationsTable('rfq','status')">Status <i t-attf-class="fa #{state.tableSort.rfq.key==='status' ? (state.tableSort.rfq.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable text-end" t-on-click="()=>this.sortOperationsTable('rfq','amount')">Amount <i t-attf-class="fa #{state.tableSort.rfq.key==='amount' ? (state.tableSort.rfq.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th></tr></thead>
           <tbody>
             <t t-if="filteredRfq.length===0"><tr><td t-att-colspan="showDateColumn?5:4" class="text-center text-muted py-3">No RFQs found.</td></tr></t>
-            <t t-foreach="filteredRfq" t-as="r" t-key="r.id"><tr>
+            <t t-foreach="sortedRfq" t-as="r" t-key="r.id"><tr>
               <td><a class="link" href="#" t-on-click.prevent="()=>this.openPurchase(r.id)"><t t-esc="r.name"/></a></td>
               <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(r.partner_id)"><t t-esc="r.partner"/></a></td>
               <td t-if="showDateColumn"><t t-esc="r.date"/></td>
@@ -214,20 +214,20 @@
     <!-- TRANSACTIONS -->
     <div class="eagle-card">
       <div class="eagle-card-header">
-        <h4 class="eagle-card-title"><i class="fa fa-exchange"/>Transactions <span class="ebadge ebadge-blue ms-1"><t t-esc="filteredTransactions.length"/></span><i class="fa fa-chevron-up eagle-table-title-chevron ms-2"/></h4>
+        <h4 t-attf-class="eagle-card-title eagle-table-title-toggle #{state.tableSectionsOpen.transactions ? '' : 'is-collapsed'}" role="button" tabindex="0" t-att-aria-expanded="state.tableSectionsOpen.transactions" t-on-click="()=>this.toggleOperationsTable('transactions')" t-on-keydown="(ev)=>this.onOperationsTableTitleKeydown(ev,'transactions')"><i class="fa fa-exchange"/>Transactions <span class="ebadge ebadge-blue ms-1"><t t-esc="filteredTransactions.length"/></span><i t-attf-class="fa #{state.tableSectionsOpen.transactions ? 'fa-chevron-up' : 'fa-chevron-down'} eagle-table-title-chevron ms-2"/></h4>
         <div class="d-flex gap-2 flex-wrap">
           <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportTx" title="Export CSV"><i class="fa fa-download"/></button>
           <button class="ebtn ebtn-sm ebtn-blue" t-on-click="()=>this.createPayment('inbound')"><i class="fa fa-arrow-down"/> Receive</button>
           <button class="ebtn ebtn-sm ebtn-red" t-on-click="()=>this.createPayment('outbound')"><i class="fa fa-arrow-up"/> Send</button>
         </div>
       </div>
-      <div class="eagle-table-wrap"><table class="eagle-table">
+      <div t-attf-class="eagle-table-wrap #{state.tableSectionsOpen.transactions ? '' : 'eagle-table-hidden'}"><table class="eagle-table" data-eagle-managed-controls="1">
         <thead><tr>
-          <th>Reference</th><th t-if="showDateColumn">Date</th><th>Partner</th><th>Ledger</th><th class="text-end">Received</th><th class="text-end">Paid</th><th>Status</th>
+          <th class="sortable" t-on-click="()=>this.sortOperationsTable('transactions','name')">Reference <i t-attf-class="fa #{state.tableSort.transactions.key==='name' ? (state.tableSort.transactions.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><t t-if="showDateColumn"><th class="sortable" t-on-click="()=>this.sortOperationsTable('transactions','date')">Date <i t-attf-class="fa #{state.tableSort.transactions.key==='date' ? (state.tableSort.transactions.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th></t><th class="sortable" t-on-click="()=>this.sortOperationsTable('transactions','partner')">Partner <i t-attf-class="fa #{state.tableSort.transactions.key==='partner' ? (state.tableSort.transactions.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('transactions','ledger')">Ledger <i t-attf-class="fa #{state.tableSort.transactions.key==='ledger' ? (state.tableSort.transactions.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable text-end" t-on-click="()=>this.sortOperationsTable('transactions','received')">Received <i t-attf-class="fa #{state.tableSort.transactions.key==='received' ? (state.tableSort.transactions.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable text-end" t-on-click="()=>this.sortOperationsTable('transactions','paid')">Paid <i t-attf-class="fa #{state.tableSort.transactions.key==='paid' ? (state.tableSort.transactions.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('transactions','state')">Status <i t-attf-class="fa #{state.tableSort.transactions.key==='state' ? (state.tableSort.transactions.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th>
         </tr></thead>
         <tbody>
           <t t-if="filteredTransactions.length===0"><tr><td t-att-colspan="showDateColumn?7:6" class="text-center text-muted py-3">No transactions found.</td></tr></t>
-          <t t-foreach="filteredTransactions" t-as="tx" t-key="tx.id"><tr>
+          <t t-foreach="sortedTransactions" t-as="tx" t-key="tx.id"><tr>
             <td><a class="link" href="#" t-on-click.prevent="()=>this.openTransaction(tx.id)"><t t-esc="tx.name"/></a></td>
             <td t-if="showDateColumn"><t t-esc="tx.date"/></td>
             <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(tx.partner_id)"><t t-esc="tx.partner"/></a></td>
@@ -247,62 +247,85 @@
     <!-- WAREHOUSE OPERATIONS -->
     <div class="eagle-two-col">
       <div class="eagle-card">
-        <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-truck"/>Delivery Orders <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredDeliveries.length"/></span><i class="fa fa-chevron-up eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportDeliveries" title="Export CSV"><i class="fa fa-download"/></button></div>
-        <div class="eagle-table-wrap"><table class="eagle-table">
-          <thead><tr><th>Reference</th><th>Customer</th><th>Creation Date</th><th>Complete Date</th><th>Carrier</th><th>Tracking Reference</th><th>Status</th></tr></thead>
+        <div class="eagle-card-header"><h4 t-attf-class="eagle-card-title eagle-table-title-toggle #{state.tableSectionsOpen.deliveries ? '' : 'is-collapsed'}" role="button" tabindex="0" t-att-aria-expanded="state.tableSectionsOpen.deliveries" t-on-click="()=>this.toggleOperationsTable('deliveries')" t-on-keydown="(ev)=>this.onOperationsTableTitleKeydown(ev,'deliveries')"><i class="fa fa-truck"/>Delivery Orders <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredDeliveries.length"/></span><i t-attf-class="fa #{state.tableSectionsOpen.deliveries ? 'fa-chevron-up' : 'fa-chevron-down'} eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportDeliveries" title="Export CSV"><i class="fa fa-download"/></button></div>
+        <div t-attf-class="eagle-table-wrap #{state.tableSectionsOpen.deliveries ? '' : 'eagle-table-hidden'}"><table class="eagle-table" data-eagle-managed-controls="1">
+          <thead><tr>
+            <t t-foreach="deliveryColumns" t-as="col" t-key="col.key">
+              <th class="eagle-delivery-column-header" t-att-data-column="col.key"
+                  t-on-dragover.prevent="onDeliveryColumnDragOver"
+                  t-on-drop="(ev)=>this.onDeliveryColumnDrop(ev,col.key)">
+                <span class="eagle-column-drag-handle" draggable="true"
+                      t-on-dragstart="(ev)=>this.onDeliveryColumnDragStart(ev,col.key)"
+                      t-on-dragend="onDeliveryColumnDragEnd"
+                      title="Drag to reorder column" aria-label="Drag to reorder column"><i class="fa fa-bars"/></span>
+                <span class="eagle-sort-heading" t-on-click.stop="()=>this.sortOperationsTable('deliveries',col.sortKey)">
+                  <t t-esc="col.label"/>
+                  <i t-attf-class="fa #{state.tableSort.deliveries.key===col.sortKey ? (state.tableSort.deliveries.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/>
+                </span>
+              </th>
+            </t>
+          </tr></thead>
           <tbody>
-            <t t-if="filteredDeliveries.length===0"><tr><td colspan="7" class="text-center text-muted py-3">No delivery orders found.</td></tr></t>
-            <t t-foreach="filteredDeliveries" t-as="d" t-key="d.id"><tr>
-              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPicking(d.id)"><t t-esc="d.name"/></a></td>
-              <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(d.partner_id)"><t t-esc="d.partner"/></a></td>
-              <td><t t-esc="d.creation_date"/></td>
-              <td><t t-esc="d.date_done"/></td>
-              <td><t t-esc="d.carrier || '—'"/></td>
-              <td>
-                <t t-if="d.tracking_reference">
-                  <t t-if="d.tracking_url">
-                    <a class="link" t-att-href="d.tracking_url" target="_blank" rel="noopener noreferrer" title="Open shipment tracking page in a new tab">
-                      <t t-esc="d.tracking_reference"/> <i class="fa fa-external-link ms-1"/>
-                    </a>
+            <t t-if="filteredDeliveries.length===0"><tr><td t-att-colspan="deliveryColumns.length" class="text-center text-muted py-3">No delivery orders found.</td></tr></t>
+            <t t-foreach="sortedDeliveries" t-as="d" t-key="d.id"><tr>
+              <t t-foreach="deliveryColumns" t-as="col" t-key="col.key"><td>
+                <t t-if="col.key === 'name'">
+                  <a class="link" href="#" t-on-click.prevent="()=>this.openPicking(d.id)"><t t-esc="d.name"/></a>
+                </t>
+                <t t-elif="col.key === 'partner'">
+                  <a class="link" href="#" t-on-click.prevent="()=>this.openPartner(d.partner_id)"><t t-esc="d.partner"/></a>
+                </t>
+                <t t-elif="col.key === 'partner_mobile'">
+                  <a t-if="d.partner_mobile" class="link" t-att-href="'tel:' + d.partner_mobile"><t t-esc="d.partner_mobile"/></a>
+                  <span t-else="">—</span>
+                </t>
+                <t t-elif="col.key === 'creation_date'"><t t-esc="d.creation_date"/></t>
+                <t t-elif="col.key === 'date_done'"><t t-esc="d.date_done"/></t>
+                <t t-elif="col.key === 'carrier'"><t t-esc="d.carrier || '—'"/></t>
+                <t t-elif="col.key === 'tracking_reference'">
+                  <t t-if="d.tracking_reference">
+                    <t t-if="d.tracking_url">
+                      <a class="link" t-att-href="d.tracking_url" target="_blank" rel="noopener noreferrer" title="Open shipment tracking page in a new tab">
+                        <t t-esc="d.tracking_reference"/> <i class="fa fa-external-link ms-1"/>
+                      </a>
+                    </t>
+                    <t t-else=""><span><t t-esc="d.tracking_reference"/></span></t>
                   </t>
                   <t t-else="">
-                    <span><t t-esc="d.tracking_reference"/></span>
+                    <input type="text" class="form-control form-control-sm eagle-tracking-input"
+                           placeholder="Enter tracking reference"
+                           t-on-keydown="(ev)=>this.onTrackingReferenceKeydown(d, ev)"
+                           t-on-blur="(ev)=>this.saveTrackingReference(d, ev)"/>
                   </t>
                 </t>
-                <t t-else="">
-                  <input type="text" class="form-control form-control-sm eagle-tracking-input"
-                         placeholder="Enter tracking reference"
-                         t-on-keydown="(ev)=>this.onTrackingReferenceKeydown(d, ev)"
-                         t-on-blur="(ev)=>this.saveTrackingReference(d, ev)"/>
+                <t t-elif="col.key === 'state'">
+                  <t t-if="['done', 'cancel'].indexOf(d.state) === -1">
+                    <button type="button"
+                            t-attf-class="ebtn ebtn-sm #{d.late?'ebtn-red':'ebtn-outline'}"
+                            t-att-disabled="state.validatingPickingId===d.id"
+                            t-on-click="(ev)=>this.validatePicking(d.id, ev)"
+                            title="Validate / change delivery status">
+                      <t t-esc="deliveryStatusLabel(d.state)"/>
+                    </button>
+                  </t>
+                  <t t-else="">
+                    <span t-attf-class="ebadge #{d.state=='done'?'ebadge-green':'ebadge-red'}"><t t-esc="deliveryStatusLabel(d.state)"/></span>
+                  </t>
                 </t>
-              </td>
-              <td>
-                <t t-if="['done', 'cancel'].indexOf(d.state) === -1">
-                  <button type="button"
-                          t-attf-class="ebtn ebtn-sm #{d.late?'ebtn-red':'ebtn-outline'}"
-                          t-att-disabled="state.validatingPickingId===d.id"
-                          t-on-click="(ev)=>this.validatePicking(d.id, ev)"
-                          title="Validate / change delivery status">
-                    <t t-esc="deliveryStatusLabel(d.state)"/>
-                  </button>
-                </t>
-                <t t-else="">
-                  <span t-attf-class="ebadge #{d.state=='done'?'ebadge-green':'ebadge-red'}"><t t-esc="deliveryStatusLabel(d.state)"/></span>
-                </t>
-              </td>
+              </td></t>
             </tr></t>
           </tbody>
-          <tfoot><tr><td colspan="6">Total (<t t-esc="filteredDeliveries.length"/>)</td><td/></tr></tfoot>
+          <tfoot><tr><td colspan="7">Total (<t t-esc="filteredDeliveries.length"/>)</td><td/></tr></tfoot>
         </table></div>
       </div>
 
       <div class="eagle-card">
-        <div class="eagle-card-header"><h4 class="eagle-card-title"><i class="fa fa-inbox"/>Receiving Orders <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredReceipts.length"/></span><i class="fa fa-chevron-up eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportReceipts" title="Export CSV"><i class="fa fa-download"/></button></div>
-        <div class="eagle-table-wrap"><table class="eagle-table">
-          <thead><tr><th>Reference</th><th>Vendor</th><th>Creation Date</th><th>Complete Date</th><th>Status</th></tr></thead>
+        <div class="eagle-card-header"><h4 t-attf-class="eagle-card-title eagle-table-title-toggle #{state.tableSectionsOpen.receipts ? '' : 'is-collapsed'}" role="button" tabindex="0" t-att-aria-expanded="state.tableSectionsOpen.receipts" t-on-click="()=>this.toggleOperationsTable('receipts')" t-on-keydown="(ev)=>this.onOperationsTableTitleKeydown(ev,'receipts')"><i class="fa fa-inbox"/>Receiving Orders <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredReceipts.length"/></span><i t-attf-class="fa #{state.tableSectionsOpen.receipts ? 'fa-chevron-up' : 'fa-chevron-down'} eagle-table-title-chevron ms-2"/></h4><button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportReceipts" title="Export CSV"><i class="fa fa-download"/></button></div>
+        <div t-attf-class="eagle-table-wrap #{state.tableSectionsOpen.receipts ? '' : 'eagle-table-hidden'}"><table class="eagle-table" data-eagle-managed-controls="1">
+          <thead><tr><th class="sortable" t-on-click="()=>this.sortOperationsTable('receipts','name')">Reference <i t-attf-class="fa #{state.tableSort.receipts.key==='name' ? (state.tableSort.receipts.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('receipts','partner')">Vendor <i t-attf-class="fa #{state.tableSort.receipts.key==='partner' ? (state.tableSort.receipts.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('receipts','creation_date')">Creation Date <i t-attf-class="fa #{state.tableSort.receipts.key==='creation_date' ? (state.tableSort.receipts.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('receipts','date_done')">Complete Date <i t-attf-class="fa #{state.tableSort.receipts.key==='date_done' ? (state.tableSort.receipts.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('receipts','state')">Status <i t-attf-class="fa #{state.tableSort.receipts.key==='state' ? (state.tableSort.receipts.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th></tr></thead>
           <tbody>
             <t t-if="filteredReceipts.length===0"><tr><td colspan="5" class="text-center text-muted py-3">No receiving orders found.</td></tr></t>
-            <t t-foreach="filteredReceipts" t-as="r" t-key="r.id"><tr>
+            <t t-foreach="sortedReceipts" t-as="r" t-key="r.id"><tr>
               <td><a class="link" href="#" t-on-click.prevent="()=>this.openPicking(r.id)"><t t-esc="r.name"/></a></td>
               <td><a class="link" href="#" t-on-click.prevent="()=>this.openPartner(r.partner_id)"><t t-esc="r.partner"/></a></td>
               <td><t t-esc="r.creation_date"/></td><td><t t-esc="r.date_done"/></td>
@@ -318,14 +341,14 @@
     <div class="eagle-two-col">
       <div class="eagle-card">
         <div class="eagle-card-header">
-          <h4 class="eagle-card-title"><i class="fa fa-random"/>Internal Stock Transfer <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredInternal.length"/></span><i class="fa fa-chevron-up eagle-table-title-chevron ms-2"/></h4>
+          <h4 t-attf-class="eagle-card-title eagle-table-title-toggle #{state.tableSectionsOpen.internal ? '' : 'is-collapsed'}" role="button" tabindex="0" t-att-aria-expanded="state.tableSectionsOpen.internal" t-on-click="()=>this.toggleOperationsTable('internal')" t-on-keydown="(ev)=>this.onOperationsTableTitleKeydown(ev,'internal')"><i class="fa fa-random"/>Internal Stock Transfer <span class="ebadge ebadge-gray ms-1"><t t-esc="filteredInternal.length"/></span><i t-attf-class="fa #{state.tableSectionsOpen.internal ? 'fa-chevron-up' : 'fa-chevron-down'} eagle-table-title-chevron ms-2"/></h4>
           <button class="ebtn ebtn-sm ebtn-outline" t-on-click="exportInternal" title="Export CSV"><i class="fa fa-download"/></button>
         </div>
-        <div class="eagle-table-wrap"><table class="eagle-table">
-          <thead><tr><th>Reference</th><th>From</th><th>To</th><th>Creation Date</th><th>Scheduled Date</th><th>Status</th><th>Responsible</th></tr></thead>
+        <div t-attf-class="eagle-table-wrap #{state.tableSectionsOpen.internal ? '' : 'eagle-table-hidden'}"><table class="eagle-table" data-eagle-managed-controls="1">
+          <thead><tr><th class="sortable" t-on-click="()=>this.sortOperationsTable('internal','name')">Reference <i t-attf-class="fa #{state.tableSort.internal.key==='name' ? (state.tableSort.internal.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('internal','from_location')">From <i t-attf-class="fa #{state.tableSort.internal.key==='from_location' ? (state.tableSort.internal.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('internal','to_location')">To <i t-attf-class="fa #{state.tableSort.internal.key==='to_location' ? (state.tableSort.internal.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('internal','creation_datetime')">Creation Date <i t-attf-class="fa #{state.tableSort.internal.key==='creation_datetime' ? (state.tableSort.internal.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('internal','scheduled_datetime')">Scheduled Date <i t-attf-class="fa #{state.tableSort.internal.key==='scheduled_datetime' ? (state.tableSort.internal.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('internal','state')">Status <i t-attf-class="fa #{state.tableSort.internal.key==='state' ? (state.tableSort.internal.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th><th class="sortable" t-on-click="()=>this.sortOperationsTable('internal','responsible')">Responsible <i t-attf-class="fa #{state.tableSort.internal.key==='responsible' ? (state.tableSort.internal.direction==='asc' ? 'fa-sort-asc' : 'fa-sort-desc') : 'fa-sort'} ms-1"/></th></tr></thead>
           <tbody>
             <t t-if="filteredInternal.length===0"><tr><td colspan="7" class="text-center text-muted py-3">No internal stock transfers found.</td></tr></t>
-            <t t-foreach="filteredInternal" t-as="i" t-key="i.id"><tr>
+            <t t-foreach="sortedInternal" t-as="i" t-key="i.id"><tr>
               <td><a class="link" href="#" t-on-click.prevent="()=>this.openPicking(i.id)"><t t-esc="i.name"/></a></td>
               <td>
                 <t t-if="i.from_location_id"><a class="link" href="#" t-on-click.prevent="()=>this.openLocation(i.from_location_id)"><t t-esc="i.from_location"/></a></t>

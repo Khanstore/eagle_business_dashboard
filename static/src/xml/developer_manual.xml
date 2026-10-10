@@ -183,6 +183,14 @@ send_daily_digest() / toggle_daily_digest(enabled) / get_digest_status()</pre>
 
       <!-- OWL -->
       <div t-if="state.section === 'owl'">
+        <h3>Version 18.0.10.11.29 — Delivery Creation Date visibility</h3>
+        <p><code>showDeliveryCreationDateColumn</code> hides the <code>creation_date</code> definition when <code>state.active_preset</code> is <code>today</code>. Since header and row cells both iterate <code>deliveryColumns</code>, the column is removed consistently and returns in its saved drag position for other presets. The empty-state cell uses the visible column count. No backend filtering is changed.</p>
+        <h3>Version 18.0.10.11.28 — Delivery customer mobile and draggable columns</h3>
+        <p><code>_operations_picking_row()</code> adds <code>partner_mobile</code> to the picking payload, using the direct delivery partner mobile and then its commercial partner's mobile as a fallback. <code>DELIVERY_COLUMN_DEFINITIONS</code> is the authoritative label/key/sort mapping for the Delivery Orders table. Both its header and each row iterate the reactive <code>deliveryColumnOrder</code> list, so column reordering updates headers and cells together instead of manually moving DOM nodes. The order persists in <code>eagle_operations_delivery_column_order_v1</code>. Each column key maps to an accessor in <code>OPERATIONS_SORT_ACCESSORS.deliveries</code>.</p>
+        <h3>Version 18.0.10.11.27 — Quick Internal Transfer dropdown defaults</h3>
+        <p><code>EagleQuickInternalTransferDialog.open()</code> no longer preloads suggestions or causes all three dropdowns to open on launch. Suggestions are fetched on explicit input clicks or typing; focus changes by the wizard do not open dropdowns.</p>
+        <h3>Version 18.0.10.11.26 — Operations sorting and default folding</h3>
+        <p>Quotations, RFQ, Transactions, Delivery Orders, Receiving Orders, and Internal Stock Transfer start folded by default and sort each displayed column through an explicit per-table field map. The handler validates field keys, updates Owl state, and persists sort direction. Comparisons treat numeric fields as numbers, dates chronologically, keep empty values at the end, and use deterministic tie-breaking. The fold-state namespace is <code>eagle_operations_managed_fold_v4_*</code>, which resets prior open-state preferences on upgrade. All Operations tables remain marked <code>data-eagle-managed-controls="1"</code> so generic DOM-only table handlers cannot override the component state.</p>
         <h3>Version 18.0.10.11.24 — Dashboard-wide table controls</h3>
         <p><code>table_tools.js</code> standardizes fold/sort behavior across Business, Finance and Operations. A new table preference namespace means all tables initialize folded once after upgrade. It binds title controls only for single-table cards; multi-table and nested cards receive per-table controls. Existing component-owned fold controls and the reactive Operations Orders/Purchase sorting remain authoritative.</p>
         <h3>Version 18.0.10.11.22 — Shared Quick Sale and table controls</h3>
@@ -416,7 +424,7 @@ zip filename     eagle_business_dashboard18-0-3-3.zip</pre>
         </ol>
       </div>
 
-      <div class="eagle-manual-foot">Advanced Business Dashboard - Developer Manual - version 18.0.10.11.24</div>
+      <div class="eagle-manual-foot">Advanced Business Dashboard - Developer Manual - version 18.0.10.11.29</div>
     </div>
   </div>
 </div>
